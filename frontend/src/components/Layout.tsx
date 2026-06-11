@@ -1,5 +1,6 @@
 /**
  * Layout protegido con el menú jerárquico de Polaris Food (referencia):
+ * cabecera con avatar del usuario + botón ☰ para colapsar a solo iconos;
  * módulos principales con submenús desplegables, filtrados por rol
  * (manual §1.2): Mesero → Menú/QR/Mesas + Duplicado voucher; Cocina →
  * Monitor de Cocina; Mesero_cocina → mixto; Administrador → todo.
@@ -8,7 +9,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, UtensilsCrossed, Settings, Wallet, BarChart3,
-  Package, Boxes, Shield, LogOut, ChevronDown,
+  Package, Boxes, Shield, LogOut, ChevronDown, Menu, CircleUserRound,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
@@ -119,6 +120,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const isAdmin = user?.roleType === "administrador" || user?.isSuperAdmin;
   const group = user?.groupName ?? "";
+  const [collapsed, setCollapsed] = useState(false);
 
   const canSee = (roles?: string[]) => isAdmin || (roles ?? []).includes(group);
 
@@ -139,14 +141,29 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="glass flex w-64 shrink-0 flex-col border-r border-border-subtle p-3">
-        <div className="mb-5 px-2 pt-2">
-          <span className="bg-gradient-to-br from-accent-blue to-accent-cyan bg-clip-text text-lg font-bold text-transparent">
-            AgoraOps
+      <aside className={`sidebar-polaris flex shrink-0 flex-col p-3 text-white transition-all duration-200 ${
+        collapsed ? "w-[76px]" : "w-72"
+      }`}>
+        {/* Cabecera: avatar + usuario + botón ☰ (Polaris) */}
+        <div className={`mb-4 flex items-center gap-3 px-1 pt-1 ${collapsed ? "flex-col" : ""}`}>
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-[hsl(200_90%_47%)] shadow-md">
+            <CircleUserRound size={30} strokeWidth={1.6} />
           </span>
-          <p className="text-[11px] text-text-muted">
-            {user?.fullName} · {user?.groupName ?? "Super Admin"}
-          </p>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="text-sm leading-tight text-white/80">
+                {user?.groupName ?? "Super Admin"}
+              </p>
+              <p className="truncate text-base font-bold leading-tight">
+                {user?.fullName}
+              </p>
+            </div>
+          )}
+          <button onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? "Mostrar menú" : "Ocultar menú"}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white transition hover:bg-white/20">
+            <Menu size={24} strokeWidth={2.4} />
+          </button>
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto pr-1">
@@ -154,44 +171,61 @@ export default function Layout() {
             if (!g.children) {
               if (!canSee(g.roles)) return null;
               return (
-                <NavLink key={g.label} to={g.to!}
+                <NavLink key={g.label} to={g.to!} title={g.label}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
+                    `flex items-center gap-3 whitespace-nowrap rounded-lg px-3 py-3 text-[16px] font-semibold transition ${
+                      collapsed ? "justify-center" : ""
+                    } ${
                       isActive
-                        ? "bg-accent-blue/15 font-medium text-accent-blue"
-                        : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
+                        ? "bg-black/25 text-white"
+                        : "text-white/90 hover:bg-white/15 hover:text-white"
                     }`}>
-                  <g.icon size={17} /> {g.label}
+                  <g.icon size={21} className="shrink-0" />
+                  {!collapsed && g.label}
                 </NavLink>
               );
             }
             const children = g.children.filter((c) => canSee(c.roles));
             if (children.length === 0) return null;
-            const expanded = open === g.label;
+            const expanded = open === g.label && !collapsed;
             const groupActive = children.some(isChildActive);
             return (
               <div key={g.label}>
-                <button
-                  onClick={() => setOpen(expanded ? null : g.label)}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition ${
+                <button title={g.label}
+                  onClick={() => {
+                    if (collapsed) {
+                      setCollapsed(false);
+                      setOpen(g.label);
+                    } else {
+                      setOpen(expanded ? null : g.label);
+                    }
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-3 text-[16px] font-semibold transition ${
+                    collapsed ? "justify-center" : "justify-between"
+                  } ${
                     groupActive
-                      ? "text-accent-blue"
-                      : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
+                      ? "bg-black/20 text-white"
+                      : "text-white/90 hover:bg-white/15 hover:text-white"
                   }`}>
-                  <span className="flex items-center gap-3">
-                    <g.icon size={17} /> {g.label}
+                  <span className={`flex min-w-0 items-center gap-3 ${collapsed ? "" : "flex-1"}`}>
+                    <g.icon size={21} className="shrink-0" />
+                    {!collapsed && (
+                      <span className="truncate whitespace-nowrap">{g.label}</span>
+                    )}
                   </span>
-                  <ChevronDown size={14}
-                    className={`shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                  {!collapsed && (
+                    <ChevronDown size={15}
+                      className={`shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                  )}
                 </button>
                 {expanded && (
-                  <div className="mb-1 ml-4 space-y-0.5 border-l border-border-subtle pl-3">
+                  <div className="mb-1 ml-5 space-y-0.5 border-l border-white/30 pl-3">
                     {children.map((c) => (
                       <button key={c.label} onClick={() => navigate(c.to)}
-                        className={`block w-full rounded-lg px-3 py-1.5 text-left text-[13px] transition ${
+                        className={`block w-full truncate whitespace-nowrap rounded-lg px-3 py-2 text-left text-[15px] transition ${
                           isChildActive(c)
-                            ? "bg-accent-blue/15 font-medium text-accent-blue"
-                            : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
+                            ? "bg-black/25 font-semibold text-white"
+                            : "text-white/85 hover:bg-white/15 hover:text-white"
                         }`}>
                         {c.label}
                       </button>
@@ -203,11 +237,19 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-border-subtle pt-2">
-          <button onClick={logout}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-text-secondary transition hover:bg-bg-tertiary hover:text-accent-rose">
-            <LogOut size={17} /> Cerrar sesión
+        <div className="border-t border-white/25 pt-2">
+          <button onClick={logout} title="Cerrar sesión"
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-[16px] font-semibold text-white/90 transition hover:bg-white/15 hover:text-white ${
+              collapsed ? "justify-center" : ""
+            }`}>
+            <LogOut size={21} className="shrink-0" />
+            {!collapsed && "Cerrar sesión"}
           </button>
+          {!collapsed && (
+            <p className="mt-1 px-3 pb-1 text-center text-sm font-extrabold tracking-wide text-white/90">
+              AgoraOps
+            </p>
+          )}
         </div>
       </aside>
 

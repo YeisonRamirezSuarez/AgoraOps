@@ -1,7 +1,7 @@
 /**
  * Primitivas UI del AgoraOps Design System: toasts, botones, campos,
- * modales, confirmación, tabla y estados vacíos. Dark premium +
- * glassmorphism (docs/implementation_plan.md — Sistema de Diseño).
+ * modales, confirmación, tabla y estados vacíos. Tema claro estilo
+ * Polaris Food (tokens en index.css).
  */
 import {
   createContext,
@@ -66,7 +66,7 @@ export function useToast() {
 
 const BTN_VARIANTS = {
   primary:
-    "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_16px_hsl(217_91%_60%/0.2)] hover:brightness-110",
+    "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_16px_hsl(199_89%_48%/0.2)] hover:brightness-110",
   success:
     "bg-gradient-to-br from-accent-emerald to-emerald-700 text-white hover:brightness-110",
   danger:
@@ -97,7 +97,7 @@ export function Button({
 /* ───────────────────────── Campos ───────────────────────── */
 
 const FIELD_CLS =
-  "w-full rounded-lg border border-border-subtle bg-bg-tertiary px-3 py-2.5 text-sm outline-none transition focus:border-accent-blue focus:shadow-[0_0_16px_hsl(217_91%_60%/0.15)]";
+  "w-full rounded-lg border border-border-subtle bg-bg-tertiary px-3 py-2.5 text-sm outline-none transition focus:border-accent-blue focus:shadow-[0_0_16px_hsl(199_89%_48%/0.15)]";
 
 export function Field({
   label,

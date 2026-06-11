@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Mesas from "./pages/Mesas";
 import Orden from "./pages/Orden";
+import Pago from "./pages/Pago";
 import Cocina from "./pages/Cocina";
 import Cajas from "./pages/Cajas";
 import Productos from "./pages/Productos";
@@ -56,6 +57,7 @@ export default function App() {
               <Route path="restaurante/domicilios" element={<DomiciliosPage />} />
               <Route path="mesas" element={<Mesas />} />
               <Route path="mesas/:orderId" element={<Orden />} />
+              <Route path="mesas/:orderId/pago" element={<Pago />} />
               <Route path="cocina" element={<Cocina />} />
               <Route path="productos" element={<Productos />} />
               <Route path="inventario" element={<Inventario />} />

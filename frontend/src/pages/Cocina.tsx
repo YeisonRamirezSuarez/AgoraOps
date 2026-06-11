@@ -1,14 +1,14 @@
 /**
- * Monitor de Cocina — manual §1.6.4.
- * Cards por mesa con productos confirmados "A cocina"; productos idénticos
- * agrupados; estados Requerido → En preparación → Listo; actualización
- * individual (clic en el producto) o masiva; sonido al marcar Listo;
- * timer por orden; tiempo real por SSE.
+ * Monitor de cocina — manual §1.6.4, layout Polaris Food: cards con
+ * cabecera de color "Mesa #N / SALA / Pedido: X", filas con checkbox
+ * "1x PRODUCTO" + punto y etiqueta de estado a la derecha, y los tres
+ * botones REQUERIDO / EN PREPARACIÓN / LISTO (aplican a los productos
+ * marcados, o a toda la mesa si no hay marcados). Sonido + SSE.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChefHat, Clock } from "lucide-react";
+import { ChefHat } from "lucide-react";
 import { api, ApiError, subscribeEvents } from "../lib/api";
-import { Badge, Button, PageHeader, useToast } from "../components/ui";
+import { PageHeader, useToast } from "../components/ui";
 
 interface KitchenItem {
   ids: number[];
@@ -16,7 +16,7 @@ interface KitchenItem {
   notes: string | null;
   toppings: string;
   quantity: number;
-  kitchen_status: "requerido" | "en_preparacion" | "listo";
+  kitchen_status: "requerido" | "en_preparacion";
 }
 interface KitchenOrder {
   order_id: number;
@@ -27,13 +27,10 @@ interface KitchenOrder {
   items: KitchenItem[];
 }
 
-const NEXT: Record<string, { label: string; status: string }[]> = {
-  requerido: [
-    { label: "En preparación", status: "en_preparacion" },
-    { label: "Listo", status: "listo" },
-  ],
-  en_preparacion: [{ label: "Listo", status: "listo" }],
-};
+const STATUS_DOT = {
+  requerido: { dot: "bg-accent-rose", label: "REQUERIDO", text: "text-accent-rose" },
+  en_preparacion: { dot: "bg-accent-amber", label: "EN PREPARACIÓN", text: "text-accent-amber" },
+} as const;
 
 function beep() {
   try {
@@ -51,13 +48,11 @@ function beep() {
 export default function Cocina() {
   const toast = useToast();
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
-  const [selected, setSelected] = useState<number[]>([]);
+  const [checked, setChecked] = useState<number[]>([]);
   const prevCount = useRef(0);
-  const [, tickStat] = useState(0);
 
   const load = useCallback(() => {
     api<KitchenOrder[]>("/api/kitchen/board").then((data) => {
-      // Sonido cuando llega un pedido nuevo a cocina
       const count = data.reduce((s, o) => s + o.items.length, 0);
       if (count > prevCount.current && prevCount.current > 0) beep();
       prevCount.current = count;
@@ -67,47 +62,36 @@ export default function Cocina() {
 
   useEffect(() => {
     load();
-    const unsub = subscribeEvents((e) => {
+    return subscribeEvents((e) => {
       if (e.table === "order_items" || e.table === "orders") load();
     });
-    const t = setInterval(() => tickStat((n) => n + 1), 30000);
-    return () => { unsub(); clearInterval(t); };
   }, [load]);
 
-  async function setStatus(itemIds: number[], status: string) {
+  function toggle(ids: number[]) {
+    const all = ids.every((id) => checked.includes(id));
+    setChecked(all
+      ? checked.filter((id) => !ids.includes(id))
+      : [...new Set([...checked, ...ids])]);
+  }
+
+  /** Botones de la mesa: aplican a los marcados de esa mesa, o a toda la mesa. */
+  async function setStatus(order: KitchenOrder, status: string) {
+    const orderIds = order.items.flatMap((i) => i.ids);
+    const selectedInOrder = orderIds.filter((id) => checked.includes(id));
+    const target = selectedInOrder.length > 0 ? selectedInOrder : orderIds;
     try {
-      await api("/api/kitchen/status", { method: "POST", body: { itemIds, status } });
+      await api("/api/kitchen/status", { method: "POST", body: { itemIds: target, status } });
       if (status === "listo") beep();
-      setSelected([]);
+      setChecked(checked.filter((id) => !target.includes(id)));
       load();
     } catch (e) {
       toast("error", e instanceof ApiError ? e.message : "Error al actualizar el estado");
     }
   }
 
-  function toggle(ids: number[]) {
-    const all = ids.every((id) => selected.includes(id));
-    setSelected(all
-      ? selected.filter((id) => !ids.includes(id))
-      : [...new Set([...selected, ...ids])]);
-  }
-
   return (
     <div className="fade-in-up">
-      <PageHeader
-        title="Monitor de Cocina"
-        subtitle="Pedidos confirmados que requieren preparación"
-        actions={selected.length > 0 ? (
-          <>
-            <Button size="sm" variant="ghost" onClick={() => setStatus(selected, "en_preparacion")}>
-              En preparación ({selected.length})
-            </Button>
-            <Button size="sm" variant="success" onClick={() => setStatus(selected, "listo")}>
-              Listo ({selected.length})
-            </Button>
-          </>
-        ) : undefined}
-      />
+      <PageHeader title="Monitor de cocina" subtitle="Restaurante" />
 
       {orders.length === 0 && (
         <div className="glass grid place-items-center rounded-2xl py-20 text-text-muted">
@@ -116,76 +100,81 @@ export default function Cocina() {
         </div>
       )}
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
-        {orders.map((order) => {
-          const minutes = Math.floor((Date.now() - new Date(order.opened_at).getTime()) / 60000);
-          const timerColor =
-            minutes >= 60 ? "text-accent-rose" : minutes >= 30 ? "text-accent-amber" : "text-accent-emerald";
-          const allIds = order.items.flatMap((i) => i.ids);
-          return (
-            <div key={order.order_id} className="glass rounded-2xl p-4">
-              <div className="mb-3 flex items-start justify-between">
-                <div>
-                  <p className="font-bold">
-                    Mesa {order.table_number ?? "—"}
-                    <span className="ml-2 text-xs font-normal text-text-muted">{order.room_name}</span>
-                  </p>
-                  <p className="text-xs text-text-muted">#{order.order_number}</p>
-                </div>
-                <span className={`flex items-center gap-1 text-sm font-semibold ${timerColor}`}>
-                  <Clock size={14} /> {minutes}m
-                </span>
-              </div>
-
-              <ul className="space-y-2">
-                {order.items.map((item, idx) => {
-                  const isSel = item.ids.every((id) => selected.includes(id));
-                  return (
-                    <li key={idx}>
-                      <button
-                        onClick={() => toggle(item.ids)}
-                        className={`w-full rounded-xl border p-2.5 text-left transition ${
-                          isSel
-                            ? "border-accent-blue bg-accent-blue/10"
-                            : "border-border-subtle hover:border-border-medium"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">
-                            {item.product_name} <span className="text-accent-cyan">×{item.quantity}</span>
-                          </span>
-                          <Badge color={item.kitchen_status === "requerido" ? "amber" : "cyan"}>
-                            {item.kitchen_status === "requerido" ? "Requerido" : "En preparación"}
-                          </Badge>
-                        </div>
-                        {item.toppings && <p className="mt-0.5 text-xs text-accent-orange">{item.toppings}</p>}
-                        {item.notes && <p className="text-xs italic text-text-muted">{item.notes}</p>}
-                      </button>
-                      <div className="mt-1 flex gap-1">
-                        {(NEXT[item.kitchen_status] ?? []).map((n) => (
-                          <Button key={n.status} size="sm"
-                            variant={n.status === "listo" ? "success" : "ghost"}
-                            onClick={() => setStatus(item.ids, n.status)}>
-                            {n.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {/* Actualización masiva de la mesa (§1.6.4) */}
-              <div className="mt-3 border-t border-border-subtle pt-2">
-                <Button size="sm" variant="success" className="w-full"
-                  onClick={() => setStatus(allIds, "listo")}>
-                  ✓ Toda la mesa Lista
-                </Button>
-              </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {orders.map((order) => (
+          <div key={order.order_id} className="glass overflow-hidden rounded-2xl">
+            {/* Cabecera de color estilo Polaris */}
+            <div className="bg-gradient-to-r from-accent-blue to-accent-cyan px-4 py-2.5 text-sm font-bold text-white">
+              Mesa #{order.table_number ?? "—"} / {(order.room_name ?? "—").toUpperCase()} / Pedido: {order.order_number}
             </div>
-          );
-        })}
+
+            {/* Filas de productos con checkbox + estado */}
+            <ul className="divide-y divide-border-subtle/60 px-4 py-2">
+              {order.items.map((item, idx) => {
+                const isChecked = item.ids.every((id) => checked.includes(id));
+                const st = STATUS_DOT[item.kitchen_status];
+                return (
+                  <li key={idx}>
+                    <label className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition ${
+                      isChecked ? "bg-accent-blue/10" : "hover:bg-bg-tertiary/40"
+                    }`}>
+                      <span className="flex min-w-0 items-center gap-3">
+                        <input type="checkbox" checked={isChecked}
+                          onChange={() => toggle(item.ids)}
+                          className="h-4 w-4 shrink-0 accent-[hsl(199_89%_48%)]" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold uppercase">
+                            {item.quantity}x {item.product_name}
+                          </span>
+                          {item.toppings && (
+                            <span className="block truncate text-xs text-accent-orange">{item.toppings}</span>
+                          )}
+                          {item.notes && (
+                            <span className="block truncate text-xs italic text-text-muted">{item.notes}</span>
+                          )}
+                        </span>
+                      </span>
+                      <span className={`flex shrink-0 items-center gap-1.5 text-xs font-bold ${st.text}`}>
+                        <span className={`h-2 w-2 rounded-full ${st.dot}`} />
+                        {st.label}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Botones de estado (marcados o toda la mesa, §1.6.4) */}
+            <div className="flex flex-wrap justify-center gap-2 border-t border-border-subtle px-4 py-3">
+              <StatusBtn color="rose" onClick={() => setStatus(order, "requerido")}>
+                REQUERIDO
+              </StatusBtn>
+              <StatusBtn color="amber" onClick={() => setStatus(order, "en_preparacion")}>
+                EN PREPARACIÓN
+              </StatusBtn>
+              <StatusBtn color="emerald" onClick={() => setStatus(order, "listo")}>
+                LISTO
+              </StatusBtn>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
+  );
+}
+
+function StatusBtn({ color, onClick, children }: {
+  color: "rose" | "amber" | "emerald"; onClick: () => void; children: React.ReactNode;
+}) {
+  const map = {
+    rose: "bg-accent-rose hover:brightness-110",
+    amber: "bg-accent-amber hover:brightness-110",
+    emerald: "bg-accent-emerald hover:brightness-110",
+  };
+  return (
+    <button onClick={onClick}
+      className={`rounded-lg px-4 py-2 text-xs font-bold text-white shadow-md transition active:scale-95 ${map[color]}`}>
+      {children}
+    </button>
   );
 }

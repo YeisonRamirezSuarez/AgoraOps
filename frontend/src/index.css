@@ -1,28 +1,33 @@
 @import "tailwindcss";
 
-/* === AGORAOPS DESIGN TOKENS (implementation_plan.md — Sistema de Diseño) === */
+/* === AGORAOPS DESIGN TOKENS — tema claro, acento CELESTE ===
+   Distribución y estilo de módulos según Polaris Food (referencia),
+   con la identidad de color celeste de AgoraOps. */
 @theme {
-  --color-bg-primary: hsl(222 47% 6%);
-  --color-bg-secondary: hsl(222 40% 10%);
-  --color-bg-tertiary: hsl(222 35% 14%);
-  --color-bg-elevated: hsl(222 30% 18%);
+  --color-bg-primary: hsl(220 20% 97%);   /* fondo de página */
+  --color-bg-secondary: hsl(0 0% 100%);   /* cards */
+  --color-bg-tertiary: hsl(220 16% 93%);  /* inputs, hover */
+  --color-bg-elevated: hsl(0 0% 100%);    /* modales */
 
-  --color-text-primary: hsl(210 40% 96%);
-  --color-text-secondary: hsl(215 20% 65%);
-  --color-text-muted: hsl(215 15% 45%);
+  --color-text-primary: hsl(222 25% 15%);
+  --color-text-secondary: hsl(220 10% 42%);
+  --color-text-muted: hsl(220 8% 56%);
 
-  --color-accent-blue: hsl(217 91% 60%);
-  --color-accent-blue-hover: hsl(217 91% 50%);
-  --color-accent-emerald: hsl(160 84% 39%);
-  --color-accent-amber: hsl(38 92% 50%);
-  --color-accent-rose: hsl(347 77% 50%);
-  --color-accent-cyan: hsl(186 72% 48%);
+  /* Acento principal (celeste) */
+  --color-accent-blue: hsl(197 92% 55%);
+  --color-accent-blue-hover: hsl(200 90% 47%);
+  /* Precios y totales (celeste intenso) */
+  --color-accent-cyan: hsl(199 95% 45%);
+
+  --color-accent-emerald: hsl(150 75% 38%);
+  --color-accent-amber: hsl(36 95% 48%);
+  --color-accent-rose: hsl(350 80% 52%);
   --color-accent-orange: hsl(24 95% 53%);
 
-  --color-border-subtle: hsl(222 20% 20%);
-  --color-border-medium: hsl(222 15% 30%);
+  --color-border-subtle: hsl(220 15% 88%);
+  --color-border-medium: hsl(220 12% 78%);
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Nunito Sans", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 html,
@@ -38,11 +43,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Glassmorphism reutilizable */
+/* Tarjeta blanca estilo Polaris (reemplaza el glassmorphism oscuro) */
 .glass {
-  background: hsl(222 40% 15% / 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid hsl(210 40% 96% / 0.08);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: 0 1px 3px hsl(220 20% 20% / 0.06), 0 4px 14px hsl(220 20% 20% / 0.05);
 }
 
 @keyframes fadeInUp {
@@ -63,7 +68,7 @@ body {
 @keyframes pulse-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 hsl(217 91% 60% / 0.3);
+    box-shadow: 0 0 0 0 hsl(197 92% 55% / 0.35);
   }
   50% {
     box-shadow: 0 0 0 8px transparent;
@@ -80,4 +85,11 @@ body {
 .mesa--danger {
   border-color: var(--color-accent-rose);
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Sidebar celeste (distribución estilo Polaris) */
+.sidebar-polaris {
+  background: linear-gradient(180deg, hsl(197 90% 54%) 0%, hsl(205 88% 50%) 100%);
+  border-right: none;
+  box-shadow: 2px 0 12px hsl(202 80% 35% / 0.25);
 }

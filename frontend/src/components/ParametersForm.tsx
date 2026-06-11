@@ -66,7 +66,7 @@ export function ParametersForm() {
           <span>Propina habilitada</span>
           <input type="checkbox" checked={!!s.tip_enabled}
             onChange={(e) => set("tip_enabled", e.target.checked)}
-            className="h-4 w-4 accent-[hsl(217_91%_60%)]" />
+            className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
         </label>
         {!!s.tip_enabled && (
           <Field label="Porcentaje de propina (%)">
@@ -80,7 +80,7 @@ export function ParametersForm() {
               <span>% de servicio (Ecuador)</span>
               <input type="checkbox" checked={!!s.service_enabled}
                 onChange={(e) => set("service_enabled", e.target.checked)}
-                className="h-4 w-4 accent-[hsl(217_91%_60%)]" />
+                className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
             </label>
             {!!s.service_enabled && (
               <Field label="Porcentaje de servicio (%)">
@@ -99,7 +99,7 @@ export function ParametersForm() {
           </span>
           <input type="checkbox" checked={!!s.allow_overdraft}
             onChange={(e) => set("allow_overdraft", e.target.checked)}
-            className="h-4 w-4 accent-[hsl(217_91%_60%)]" />
+            className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
         </label>
       </div>
 

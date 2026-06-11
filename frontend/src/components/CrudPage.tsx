@@ -180,13 +180,13 @@ export function CrudPage({
           <label className="flex items-center gap-1">
             <input type="radio" checked={!!v} disabled={disabled}
               onChange={() => setEditing({ ...editing!, [f.name]: true })}
-              className="h-3.5 w-3.5 accent-[hsl(217_91%_60%)]" />
+              className="h-3.5 w-3.5 accent-[hsl(199_89%_48%)]" />
             Sí
           </label>
           <label className="flex items-center gap-1">
             <input type="radio" checked={!v} disabled={disabled}
               onChange={() => setEditing({ ...editing!, [f.name]: false })}
-              className="h-3.5 w-3.5 accent-[hsl(217_91%_60%)]" />
+              className="h-3.5 w-3.5 accent-[hsl(199_89%_48%)]" />
             No
           </label>
         </span>
@@ -346,7 +346,7 @@ export function CrudPage({
                     ) : f.type === "checkbox" ? (
                       <input type="checkbox" checked={!!editing[f.name]} disabled={disabled}
                         onChange={(e) => setEditing({ ...editing, [f.name]: e.target.checked })}
-                        className="h-4 w-4 accent-[hsl(217_91%_60%)]" />
+                        className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
                     ) : (
                       <Input type={f.type ?? "text"} value={String(editing[f.name] ?? "")}
                         required={f.required} disabled={disabled}

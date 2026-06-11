@@ -154,7 +154,7 @@ function PaymentMethodsTab() {
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={m.is_active}
                 onChange={(e) => save(m, { is_active: e.target.checked })}
-                className="h-4 w-4 accent-[hsl(217_91%_60%)]" />
+                className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
               {m.is_active ? "Activo" : "Inactivo"}
             </label>
           </div>

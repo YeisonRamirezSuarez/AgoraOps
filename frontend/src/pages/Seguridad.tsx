@@ -215,7 +215,7 @@ function UsersTab() {
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={!!editing.is_worker}
                 onChange={(e) => setEditing({ ...editing, is_worker: e.target.checked })}
-                className="h-4 w-4 accent-[hsl(217_91%_60%)]" />
+                className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
               Es trabajador (requiere horario)
             </label>
             {!isNew && (

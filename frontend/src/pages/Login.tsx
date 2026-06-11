@@ -35,7 +35,7 @@ export default function Login() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(ellipse_at_top,hsl(222_47%_10%),hsl(222_47%_6%)_60%)] p-4">
+    <main className="grid min-h-screen place-items-center bg-[radial-gradient(ellipse_at_top,hsl(199_90%_95%),hsl(220_20%_96%)_65%)] p-4">
       <div className="glass fade-in-up w-full max-w-sm rounded-2xl p-8 shadow-2xl">
         <div className="mb-8 text-center">
           <h1 className="bg-gradient-to-br from-accent-blue to-accent-cyan bg-clip-text text-2xl font-bold text-transparent">
@@ -65,7 +65,7 @@ export default function Login() {
               autoCapitalize="none"
               spellCheck={false}
               required
-              className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_hsl(217_91%_60%/0.2)]"
+              className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_hsl(199_89%_48%/0.2)]"
             />
           </div>
 
@@ -80,7 +80,7 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 pr-11 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_hsl(217_91%_60%/0.2)]"
+                className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 pr-11 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_hsl(199_89%_48%/0.2)]"
               />
               <button
                 type="button"
@@ -96,7 +96,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover py-3 font-semibold text-white shadow-[0_0_20px_hsl(217_91%_60%/0.2)] transition hover:scale-[1.02] hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+            className="w-full rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover py-3 font-semibold text-white shadow-[0_0_20px_hsl(199_89%_48%/0.2)] transition hover:scale-[1.02] hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
           >
             {loading ? "Iniciando sesión…" : "Iniciar sesión"}
           </button>
