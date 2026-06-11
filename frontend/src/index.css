@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* === AGORAOPS DESIGN TOKENS (implementation_plan.md — Sistema de Diseño) === */
+@theme {
+  --color-bg-primary: hsl(222 47% 6%);
+  --color-bg-secondary: hsl(222 40% 10%);
+  --color-bg-tertiary: hsl(222 35% 14%);
+  --color-bg-elevated: hsl(222 30% 18%);
+
+  --color-text-primary: hsl(210 40% 96%);
+  --color-text-secondary: hsl(215 20% 65%);
+  --color-text-muted: hsl(215 15% 45%);
+
+  --color-accent-blue: hsl(217 91% 60%);
+  --color-accent-blue-hover: hsl(217 91% 50%);
+  --color-accent-emerald: hsl(160 84% 39%);
+  --color-accent-amber: hsl(38 92% 50%);
+  --color-accent-rose: hsl(347 77% 50%);
+  --color-accent-cyan: hsl(186 72% 48%);
+  --color-accent-orange: hsl(24 95% 53%);
+
+  --color-border-subtle: hsl(222 20% 20%);
+  --color-border-medium: hsl(222 15% 30%);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glassmorphism reutilizable */
+.glass {
+  background: hsl(222 40% 15% / 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(210 40% 96% / 0.08);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 400ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(217 91% 60% / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+/* Mesa según tiempo de ocupación (manual §1.6.3) */
+.mesa--fresh {
+  border-color: var(--color-accent-emerald);
+}
+.mesa--warning {
+  border-color: var(--color-accent-amber);
+}
+.mesa--danger {
+  border-color: var(--color-accent-rose);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
