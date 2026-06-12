@@ -6,8 +6,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, QrCode, Search, UtensilsCrossed } from "lucide-react";
 import { api } from "../lib/api";
-import { CrudPage } from "../components/CrudPage";
-import { EnConstruccion } from "../components/EnConstruccion";
 import { cop, Input, PageHeader } from "../components/ui";
 
 interface MenuProduct {
@@ -147,32 +145,6 @@ export function QrPage() {
 
 /* Reservaciones vive en pages/Reservaciones.tsx (réplica Polaris) */
 
-/* ───────── Clientes (§1.6.6) ───────── */
-export function ClientesPage() {
-  return (
-    <div className="fade-in-up">
-      <PageHeader title="Clientes" />
-      <CrudPage title="cliente" endpoint="/api/catalogs/clients"
-        fields={[
-          { name: "document_id", label: "NIT / Cédula" },
-          { name: "name", label: "Nombre", required: true },
-          { name: "phone", label: "Teléfono" },
-          { name: "email", label: "Correo" },
-          { name: "address", label: "Dirección", inTable: false },
-        ]} />
-    </div>
-  );
-}
+/* Clientes vive en pages/Clientes.tsx (réplica Polaris) */
 
-/* ───────── Gestión de domicilios (Fase 4) ───────── */
-export function DomiciliosPage() {
-  return (
-    <div className="fade-in-up">
-      <PageHeader title="Gestión de domicilios" />
-      <EnConstruccion
-        titulo="Gestión de domicilios"
-        nota="Funcionalidad del PHP legacy (registrarVentaDomi, empresadomi, valorDomi) planificada en Fase 4 del plan de implementación."
-      />
-    </div>
-  );
-}
+/* Gestión de domicilios vive en pages/Domicilios.tsx (réplica Polaris) */
