@@ -71,6 +71,8 @@ const BTN_VARIANTS = {
     "bg-gradient-to-br from-accent-emerald to-emerald-700 text-white hover:brightness-110",
   danger:
     "bg-accent-rose/15 text-accent-rose border border-accent-rose/40 hover:bg-accent-rose/25",
+  dark:
+    "bg-[hsl(222_25%_15%)] text-white hover:brightness-150",
   ghost:
     "border border-border-medium text-text-secondary hover:text-text-primary hover:border-border-subtle hover:bg-bg-tertiary",
 } as const;
@@ -98,6 +100,21 @@ export function Button({
 
 const FIELD_CLS =
   "w-full rounded-lg border border-border-subtle bg-bg-tertiary px-3 py-2.5 text-sm outline-none transition focus:border-accent-blue focus:shadow-[0_0_16px_hsl(199_89%_48%/0.15)]";
+
+/** Fila de formulario tipo página (estilo Polaris "Agregar nueva …"):
+ * etiqueta a la izquierda con * de obligatorio, control a la derecha. */
+export function FormRow({ label, required, children }: {
+  label: string; required?: boolean; children: ReactNode;
+}) {
+  return (
+    <label className="grid items-center gap-2 sm:grid-cols-[220px_1fr]">
+      <span className="text-sm font-semibold">
+        {label} {required && <span className="text-accent-rose">*</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
 
 export function Field({
   label,
@@ -130,6 +147,39 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={`${FIELD_CLS} ${props.className ?? ""}`} />;
+}
+
+/** Input de dinero: muestra el valor formateado en COP mientras se
+ * escribe (es-CO: 315000 → 315.000) y entrega al padre solo dígitos. */
+export function MoneyInput({
+  value,
+  onValueChange,
+  bare = false,
+  className = "",
+  ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> & {
+  value: string | number;
+  onValueChange: (raw: string) => void;
+  /** Sin estilos de campo (para inputs con estilo propio). */
+  bare?: boolean;
+}) {
+  const n = Number(value);
+  const display = value === "" || value == null || Number.isNaN(n)
+    ? ""
+    : new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(n);
+  return (
+    <input
+      {...props}
+      type="text"
+      inputMode="numeric"
+      value={display}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/\D/g, "");
+        onValueChange(raw === "" ? "" : String(Number(raw)));
+      }}
+      className={bare ? className : `${FIELD_CLS} ${className}`}
+    />
+  );
 }
 
 /* ───────────────────────── Modal ───────────────────────── */
@@ -228,7 +278,7 @@ export function Table({
     return (
       <div className="glass grid place-items-center rounded-2xl py-14 text-text-muted">
         <Inbox size={32} className="mb-2 opacity-60" />
-        <p className="text-sm">Sin registros</p>
+        <p className="text-sm">No hay registros para mostrar</p>
       </div>
     );
   }
@@ -299,6 +349,65 @@ export const cop = new Intl.NumberFormat("es-CO", {
   currency: "COP",
   maximumFractionDigits: 0,
 });
+
+/* ─────────────── Paginación estilo Polaris (todas las tablas) ───────────────
+   "Ver 10/20/50" · « ‹ pág › » · [x a y de z] */
+
+export function usePagination<T>(items: T[]) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const cur = Math.min(page, totalPages);
+  const slice = items.slice((cur - 1) * pageSize, cur * pageSize);
+  const from = items.length === 0 ? 0 : (cur - 1) * pageSize + 1;
+  const to = Math.min(cur * pageSize, items.length);
+  // Sin registros no se muestra la barra (solo el estado vacío)
+  const bar = items.length === 0 ? null : (
+    <PaginationBar page={cur} totalPages={totalPages} pageSize={pageSize}
+      from={from} to={to} total={items.length}
+      onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
+  );
+  return { slice, bar, resetPage: () => setPage(1) };
+}
+
+export function PaginationBar({ page, totalPages, pageSize, from, to, total, onPage, onPageSize }: {
+  page: number; totalPages: number; pageSize: number;
+  from: number; to: number; total: number;
+  onPage: (p: number) => void; onPageSize: (n: number) => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <label className="flex items-center gap-2 text-text-secondary">
+        Ver
+        <Select value={pageSize} className="!w-20 !py-1.5"
+          onChange={(e) => onPageSize(Number(e.target.value))}>
+          {[10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+        </Select>
+      </label>
+      <div className="flex items-center gap-1">
+        <Pager label="«" disabled={page === 1} onClick={() => onPage(1)} />
+        <Pager label="‹" disabled={page === 1} onClick={() => onPage(page - 1)} />
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-blue text-sm font-semibold text-white">
+          {page}
+        </span>
+        <Pager label="›" disabled={page === totalPages} onClick={() => onPage(page + 1)} />
+        <Pager label="»" disabled={page === totalPages} onClick={() => onPage(totalPages)} />
+      </div>
+      <span className="text-xs text-text-muted">[{from} a {to} de {total}]</span>
+    </div>
+  );
+}
+
+function Pager({ label, disabled, onClick }: {
+  label: string; disabled: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className="grid h-8 w-8 place-items-center rounded-lg border border-border-subtle text-text-secondary transition hover:bg-bg-tertiary disabled:opacity-40">
+      {label}
+    </button>
+  );
+}
 
 export function Tabs({
   tabs,

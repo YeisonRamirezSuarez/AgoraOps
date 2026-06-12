@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRightLeft, Ban, MessageSquare, Minus, Plus, Printer,
-  Receipt, ReceiptText, RotateCcw, Search, Send, Trash2, Undo2, Wallet,
+  Receipt, ReceiptText, RotateCcw, Search, Send, Trash2, Undo2, Users, Wallet,
 } from "lucide-react";
 import { api, ApiError, subscribeEvents } from "../lib/api";
 import {
@@ -88,6 +88,18 @@ export default function Orden() {
   const confirmedItems = activeItems.filter((i) => i.kitchen_status !== "nuevo");
   const total = activeItems.reduce((s, i) => s + Number(i.subtotal), 0);
 
+  // §1.6.4: solo se cobra cuando todo está Listo en el Monitor de Cocina
+  function goToPay() {
+    const inKitchen = activeItems.some(
+      (i) => i.kitchen_status === "requerido" || i.kitchen_status === "en_preparacion",
+    );
+    if (inKitchen) {
+      toast("error", "No se puede cobrar. Algunos productos aún se encuentran en preparación.");
+      return;
+    }
+    navigate(`/mesas/${order!.id}/pago`);
+  }
+
   async function confirmItems() {
     try {
       const r = await api<{ sobreComanda: boolean }>(`/api/orders/${orderId}/confirm`, {
@@ -112,29 +124,31 @@ export default function Orden() {
   if (!order) return <p className="text-text-muted">Cargando orden…</p>;
 
   return (
-    <div className="fade-in-up -m-6 flex min-h-[calc(100vh)] flex-col lg:flex-row">
-      {/* ══════════ Columna izquierda: menú ══════════ */}
-      <div className="flex-1 p-6">
-        {/* Encabezado estilo Polaris */}
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/mesas")}
-              className="rounded-lg p-2 text-text-muted transition hover:bg-bg-tertiary hover:text-text-primary">
-              <ArrowLeft size={19} />
-            </button>
-            <div>
-              <h1 className="text-lg font-bold">
-                Orden: {order.order_number} {tableNumber != null && `- Mesa ${tableNumber}`}
-              </h1>
-              <p className="text-sm text-text-secondary">Mesero: {order.attended_by ?? "—"}</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Total</p>
-            <p className="text-2xl font-bold text-accent-cyan">{cop.format(total)}</p>
+    <div className="fade-in-up -m-6 flex min-h-[calc(100vh)] flex-col">
+      {/* ══════════ Cabecera a lo ancho del contenido (estilo Polaris):
+          título + mesero a la izquierda, TOTAL al extremo derecho ══════════ */}
+      <header className="glass flex items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-6 py-3">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate("/mesas")}
+            className="rounded-lg p-2 text-text-muted transition hover:bg-bg-tertiary hover:text-text-primary">
+            <ArrowLeft size={19} />
+          </button>
+          <div>
+            <h1 className="text-lg font-bold">
+              Orden: {order.order_number} {tableNumber != null && `- Mesa ${tableNumber}`}
+            </h1>
+            <p className="text-sm text-text-secondary">Mesero: {order.attended_by ?? "—"}</p>
           </div>
         </div>
+        <div className="text-right">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Total</p>
+          <p className="text-2xl font-bold leading-tight text-accent-cyan">{cop.format(total)}</p>
+        </div>
+      </header>
 
+      <div className="flex flex-1 flex-col lg:flex-row">
+      {/* ══════════ Columna izquierda: menú ══════════ */}
+      <div className="flex-1 p-6">
         {/* Buscador + iconos de acción */}
         <div className="mb-4 flex items-center gap-2">
           <div className="relative flex-1">
@@ -233,6 +247,16 @@ export default function Orden() {
 
         {/* Acciones inferiores estilo Polaris */}
         <div className="mt-4 space-y-2 border-t border-border-subtle pt-4">
+          <button type="button"
+            onClick={() => toast("error", "Compras Compartidas — pendiente de definición de requisitos.")}
+            className="flex w-full items-center justify-between rounded-xl border border-border-subtle px-4 py-2.5 text-sm transition hover:border-border-medium">
+            <span className="flex items-center gap-2 font-medium text-text-secondary">
+              <Users size={16} /> Compras Compartidas
+            </span>
+            <span className="relative h-5 w-9 shrink-0 rounded-full bg-bg-tertiary">
+              <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow" />
+            </span>
+          </button>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="ghost" onClick={() => setModal("view")}>
               <ReceiptText size={15} className="-mt-0.5 mr-1.5 inline" /> Ver Orden
@@ -245,8 +269,8 @@ export default function Orden() {
             <Button variant="danger" onClick={() => setModal("close")} aria-label="Cerrar mesa">
               <Undo2 size={15} />
             </Button>
-            <Button variant="success"
-              onClick={() => navigate(`/mesas/${order.id}/pago`)}
+            <Button variant="dark"
+              onClick={goToPay}
               disabled={activeItems.length === 0 || newItems.length > 0}>
               <Wallet size={15} className="-mt-0.5 mr-1.5 inline" /> Cobrar Mesa
             </Button>
@@ -258,6 +282,7 @@ export default function Orden() {
           )}
         </div>
       </aside>
+      </div>
 
       {/* ══════════ Modales ══════════ */}
       <AddProductModal product={adding} orderId={order.id} onClose={() => setAdding(null)} onAdded={load} />

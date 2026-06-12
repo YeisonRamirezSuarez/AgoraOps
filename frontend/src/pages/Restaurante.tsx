@@ -179,7 +179,7 @@ export function ReservacionesPage() {
             options: rooms.map((r) => ({ value: r.id, label: r.name })),
           },
           { name: "decoration_type", label: "Decoración", inTable: false },
-          { name: "cost", label: "Costo", type: "number", inTable: false },
+          { name: "cost", label: "Costo", type: "money", inTable: false },
           { name: "observations", label: "Observaciones", inTable: false },
         ]} />
     </div>

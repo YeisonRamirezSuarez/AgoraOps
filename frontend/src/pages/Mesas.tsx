@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Clock, Coffee, LayoutGrid, MessageSquare, UserRound, Users,
+  AlertTriangle, Clock, Coffee, LayoutGrid, Lock, MessageSquare, UserRound, Users,
 } from "lucide-react";
 import { api, ApiError, subscribeEvents } from "../lib/api";
 import { Badge, cop, PageHeader, useToast } from "../components/ui";
@@ -48,16 +48,20 @@ export default function Mesas() {
   const navigate = useNavigate();
   const [board, setBoard] = useState<BoardCell[]>([]);
   const [activeRoom, setActiveRoom] = useState<number | null>(null);
+  // null = cargando; false = todas las cajas cerradas → no se abren mesas (§1.6.3)
+  const [cashOpen, setCashOpen] = useState<boolean | null>(null);
   const [, tick] = useState(0);
 
   const load = useCallback(() => {
     api<BoardCell[]>("/api/orders/board").then(setBoard).catch(() => {});
+    api<{ open: boolean }>("/api/orders/cash-status")
+      .then((r) => setCashOpen(r.open)).catch(() => {});
   }, []);
 
   useEffect(() => {
     load();
     const unsub = subscribeEvents((e) => {
-      if (e.table === "orders" || e.table === "order_items") load();
+      if (e.table === "orders" || e.table === "order_items" || e.table === "cash_sessions") load();
     });
     // Cronómetro en vivo (Polaris muestra HH:MM:SS)
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -81,6 +85,10 @@ export default function Mesas() {
       navigate(`/mesas/${cell.order_id}`);
       return;
     }
+    if (cashOpen === false) {
+      toast("error", "Todas las cajas están cerradas; no es posible abrir mesas.");
+      return;
+    }
     try {
       const order = await api<{ id: number }>("/api/orders/occupy", {
         method: "POST",
@@ -95,6 +103,17 @@ export default function Mesas() {
   return (
     <div className="fade-in-up">
       <PageHeader title="Mesas" subtitle="Restaurante" />
+
+      {/* Sin caja abierta no se crean mesas (§1.6.3) */}
+      {cashOpen === false && (
+        <div className="mb-5 flex items-center gap-3 rounded-xl border border-accent-rose/40 bg-accent-rose/10 px-4 py-3 text-sm text-accent-rose">
+          <Lock size={16} className="shrink-0" />
+          <span>
+            <b>Todas las cajas están cerradas;</b> no es posible abrir mesas.
+            Abra una caja en <b>Gestión de cajas</b> para comenzar a operar.
+          </span>
+        </div>
+      )}
 
       {/* Tabs por sala, estilo Polaris (icono + nombre, subrayado activo) */}
       <div className="mb-5 flex flex-wrap gap-1 border-b border-border-subtle">
@@ -140,6 +159,7 @@ export default function Mesas() {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
         {cells.map((cell) => {
           const isOccupied = !!cell.order_id;
+          const blocked = !isOccupied && cashOpen === false;
           const time = cell.opened_at ? elapsed(cell.opened_at) : null;
           const tone = time ? tableTimeColor(time.minutes) : null;
           const style = tone ? TIME_STYLES[tone] : null;
@@ -147,7 +167,11 @@ export default function Mesas() {
 
           return (
             <button key={cell.table_id} onClick={() => openTable(cell)}
-              className={`glass rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-xl ${
+              className={`glass rounded-2xl border p-5 text-left transition ${
+                blocked
+                  ? "cursor-not-allowed opacity-55"
+                  : "hover:-translate-y-0.5 hover:shadow-xl"
+              } ${
                 isOccupied
                   ? tone === "danger" ? "border-accent-rose/60"
                     : tone === "warning" ? "border-accent-amber/60"
@@ -198,6 +222,10 @@ export default function Mesas() {
                     </p>
                   )}
                 </>
+              ) : blocked ? (
+                <p className="flex items-center gap-1.5 pt-1 text-xs text-accent-rose">
+                  <Lock size={12} /> Caja cerrada — no disponible
+                </p>
               ) : (
                 <p className="pt-1 text-xs text-text-muted">
                   Toque la mesa para ocuparla y crear la orden

@@ -10,7 +10,7 @@ import { useAuth } from "../lib/auth";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
 import {
-  Badge, Button, cop, Field, Input, Modal, PageHeader, Table, useToast,
+  Badge, Button, cop, Field, Input, Modal, PageHeader, Table, usePagination, useToast,
 } from "../components/ui";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -70,6 +70,7 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
   useEffect(load, [load]);
 
   const total = rows.reduce((s, r) => s + Number(r.total), 0);
+  const { slice, bar } = usePagination(rows);
 
   return (
     <>
@@ -80,7 +81,7 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
         {rows.length} ventas · Total <span className="font-bold text-text-primary">{cop.format(total)}</span>
       </p>
       <Table headers={["Orden", "Fecha", "Mesa", "Atendió", "Cliente", "Total", "Pagos", ""]} empty={rows.length === 0}>
-        {rows.map((r) => (
+        {slice.map((r) => (
           <tr key={String(r.id)}>
             <td className="px-4 py-2">#{String(r.order_number)}</td>
             <td className="px-4 py-2 text-xs">{new Date(String(r.created_at)).toLocaleString("es-CO")}</td>
@@ -98,6 +99,8 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
           </tr>
         ))}
       </Table>
+
+      {bar}
 
       <Modal open={!!detail} title={`Detalle de venta #${detail?.order_number ?? ""}`} onClose={() => setDetail(null)}>
         {detail && (
@@ -129,12 +132,13 @@ function GeneralTab() {
       .then(setRows).catch(() => {});
   }, [from, to]);
   useEffect(load, [load]);
+  const { slice, bar } = usePagination(rows);
 
   return (
     <>
       <DateFilters from={from} to={to} setFrom={setFrom} setTo={setTo} onSearch={load} />
       <Table headers={["Orden", "Fecha", "Mesa", "Estado", "Atendió", "Total"]} empty={rows.length === 0}>
-        {rows.map((r) => (
+        {slice.map((r) => (
           <tr key={String(r.id)}>
             <td className="px-4 py-2">#{String(r.order_number)}</td>
             <td className="px-4 py-2 text-xs">{new Date(String(r.created_at)).toLocaleString("es-CO")}</td>
@@ -149,6 +153,8 @@ function GeneralTab() {
           </tr>
         ))}
       </Table>
+
+      {bar}
     </>
   );
 }
@@ -165,12 +171,13 @@ function CancelledTab() {
       .then(setRows).catch(() => {});
   }, [from, to]);
   useEffect(load, [load]);
+  const { slice, bar } = usePagination(rows);
 
   return (
     <>
       <DateFilters from={from} to={to} setFrom={setFrom} setTo={setTo} onSearch={load} />
       <Table headers={["Orden", "Fecha", "Mesa", "Atendió", "Canceló", "Motivo", "Valor", ""]} empty={rows.length === 0}>
-        {rows.map((r) => {
+        {slice.map((r) => {
           const items = r.cancelled_items as unknown[];
           return (
             <tr key={String(r.id)}>
@@ -190,6 +197,8 @@ function CancelledTab() {
           );
         })}
       </Table>
+
+      {bar}
 
       <Modal open={!!detail} title="Productos cancelados" onClose={() => setDetail(null)}>
         {detail && (

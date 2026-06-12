@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // En desarrollo el API corre en :4000; en producción usar VITE_API_URL
-      "/api": "https://agora-ops-x8jt.vercel.app/",
+      "/api": "http://localhost:4000",
     },
   },
 });

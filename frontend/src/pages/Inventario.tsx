@@ -8,9 +8,10 @@ import { api, ApiError } from "../lib/api";
 import { CrudPage } from "../components/CrudPage";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
+import { ArrowLeft, Plus } from "lucide-react";
 import {
-  Badge, Button, cop, Field, Input, Modal, PageHeader, Select, Table,
-  useToast,
+  Badge, Button, cop, Field, FormRow, Input, MoneyInput, PageHeader, Select, Table,
+  usePagination, useToast,
 } from "../components/ui";
 import { ENTRY_REASONS, EXIT_REASONS } from "../shared/constants/movementReasons";
 
@@ -84,17 +85,25 @@ function MovementsTab() {
     api<Record<string, unknown>[]>("/api/inventory/movements").then(setRows).catch(() => {});
   }, []);
   useEffect(load, [load]);
+  const { slice, bar } = usePagination(rows);
+
+  // Registro tipo página (estilo Polaris), reemplaza al modal
+  if (open) {
+    return <MovementModal open onClose={() => setOpen(false)} onDone={load} />;
+  }
 
   return (
     <>
       <div className="mb-4 flex justify-end">
-        <Button onClick={() => setOpen(true)}>Registrar movimiento</Button>
+        <Button onClick={() => setOpen(true)}>
+          <Plus size={15} className="-mt-0.5 mr-1 inline" /> Registrar movimiento
+        </Button>
       </div>
       <Table
         headers={["Fecha", "Producto", "Tipo", "Razón", "Cantidad", "Antes → Después", "Proveedor", "Usuario"]}
         empty={rows.length === 0}
       >
-        {rows.map((r) => (
+        {slice.map((r) => (
           <tr key={String(r.id)}>
             <td className="px-4 py-2 text-xs">{new Date(String(r.created_at)).toLocaleString("es-CO")}</td>
             <td className="px-4 py-2">{String(r.product_name ?? "—")}</td>
@@ -109,7 +118,8 @@ function MovementsTab() {
           </tr>
         ))}
       </Table>
-      <MovementModal open={open} onClose={() => setOpen(false)} onDone={load} />
+
+      {bar}
     </>
   );
 
@@ -174,16 +184,28 @@ function MovementsTab() {
     }
 
     return (
-      <Modal open={open} title="Registrar movimiento" onClose={onClose} wide>
-        <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
-          <Field label="Producto del inventario">
+      <form onSubmit={save} className="fade-in-up">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Registrar movimiento</h2>
+          <div className="flex gap-2">
+            <Button type="submit">
+              <Plus size={15} className="-mt-0.5 mr-1 inline" /> Agregar
+            </Button>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              <ArrowLeft size={15} className="-mt-0.5 mr-1 inline" /> Volver
+            </Button>
+          </div>
+        </div>
+
+        <div className="glass max-w-3xl space-y-4 rounded-2xl p-6">
+          <FormRow label="Producto del inventario" required>
             <Select required value={form.productId}
               onChange={(e) => setForm({ ...form, productId: e.target.value })}>
-              <option value="">— Seleccione —</option>
+              <option value="">— Seleccione una opción —</option>
               {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>)}
             </Select>
-          </Field>
-          <Field label="Tipo de movimiento">
+          </FormRow>
+          <FormRow label="Tipo de movimiento" required>
             <Select value={form.direction}
               onChange={(e) => setForm({
                 ...form, direction: e.target.value,
@@ -193,18 +215,18 @@ function MovementsTab() {
               <option value="ENTRADA">Ingreso</option>
               <option value="SALIDA">Salida</option>
             </Select>
-          </Field>
-          <Field label="Razón">
+          </FormRow>
+          <FormRow label="Razón" required>
             <Select value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}>
               {reasons.map((r) => <option key={r} value={r}>{r}</option>)}
             </Select>
-          </Field>
-          <Field label="Cantidad">
+          </FormRow>
+          <FormRow label="Cantidad" required>
             <Input type="number" min={0.01} step="any" required value={form.quantity}
               onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
-          </Field>
+          </FormRow>
           {presentations.length > 0 && (
-            <Field label="Presentación de compra (opcional)">
+            <FormRow label="Presentación de compra (opcional)">
               <Select value={form.presentationId}
                 onChange={(e) => setForm({ ...form, presentationId: e.target.value })}>
                 <option value="">— Unidad —</option>
@@ -212,50 +234,47 @@ function MovementsTab() {
                   <option key={p.id} value={p.id}>{p.name} (×{p.conversion_factor})</option>
                 ))}
               </Select>
-            </Field>
+            </FormRow>
           )}
           {isEntry && (
             <>
-              <Field label="Proveedor">
+              <FormRow label="Proveedor">
                 <Select value={form.supplierId}
                   onChange={(e) => setForm({ ...form, supplierId: e.target.value })}>
-                  <option value="">— Seleccione —</option>
+                  <option value="">— Seleccione una opción —</option>
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </Select>
-              </Field>
-              <Field label="Total ($)">
-                <Input type="number" min={0} value={form.total}
-                  onChange={(e) => setForm({ ...form, total: e.target.value })} />
-              </Field>
+              </FormRow>
+              <FormRow label="Total ($)">
+                <MoneyInput value={form.total}
+                  onValueChange={(raw) => setForm({ ...form, total: raw })} />
+              </FormRow>
             </>
           )}
-          <Field label="Documento de referencia">
+          <FormRow label="Documento de referencia">
             <Input value={form.referenceDocument}
               onChange={(e) => setForm({ ...form, referenceDocument: e.target.value })} />
-          </Field>
-          <Field label="Movimiento de caja (opcional)">
+          </FormRow>
+          <FormRow label="Movimiento de caja (opcional)">
             <Select value={form.cashSessionId}
               onChange={(e) => setForm({ ...form, cashSessionId: e.target.value })}>
               <option value="">— Sin movimiento de caja —</option>
               {sessions.map((s) => <option key={s.session_id} value={String(s.session_id)}>{s.name}</option>)}
             </Select>
-          </Field>
+          </FormRow>
           {form.cashSessionId && (
-            <Field label="Tipo de movimiento en caja">
+            <FormRow label="Tipo de movimiento en caja" required>
               <Select required value={form.cashMovementType}
                 onChange={(e) => setForm({ ...form, cashMovementType: e.target.value })}>
-                <option value="">— Seleccione —</option>
+                <option value="">— Seleccione una opción —</option>
                 <option value="ENTRADA">Entrada</option>
                 <option value="SALIDA">Salida</option>
               </Select>
-            </Field>
+            </FormRow>
           )}
-          <div className="col-span-full flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-            <Button type="submit">Agregar</Button>
-          </div>
-        </form>
-      </Modal>
+        </div>
+        <p className="mt-2 text-xs font-medium text-accent-rose">* Campos obligatorios</p>
+      </form>
     );
   }
 }

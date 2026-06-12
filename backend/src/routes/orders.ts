@@ -16,9 +16,10 @@ export const ordersRouter = Router();
 ordersRouter.use(requireAuth);
 
 /** Opciones para la pantalla de pago (§1.6.3): métodos activos, bancos,
- * denominaciones (atajos de efectivo §1.7.8) y propina configurada. */
+ * denominaciones (atajos de efectivo §1.7.8), propina configurada y
+ * cajas abiertas (Caja de Pago del resumen de transacción). */
 ordersRouter.get("/payment-options", async (req, res) => {
-  const [methods, banks, denominations, settings] = await Promise.all([
+  const [methods, banks, denominations, settings, sessions] = await Promise.all([
     query(
       "SELECT id, name FROM payment_methods WHERE tenant_id = $1 AND is_active ORDER BY name",
       [req.user!.tenantId],
@@ -36,11 +37,30 @@ ordersRouter.get("/payment-options", async (req, res) => {
       [req.user!.tenantId],
     ),
     queryOne(
-      "SELECT tip_enabled, tip_percentage, service_enabled, service_percentage FROM business_settings WHERE tenant_id = $1",
+      `SELECT tip_enabled, tip_percentage, service_enabled, service_percentage,
+              business_name, address, phone, tax_id
+       FROM business_settings WHERE tenant_id = $1`,
+      [req.user!.tenantId],
+    ),
+    query(
+      `SELECT cs.id, cr.name FROM cash_sessions cs
+       JOIN cash_registers cr ON cr.id = cs.cash_register_id
+       WHERE cs.tenant_id = $1 AND cs.status = 'abierta'
+       ORDER BY cs.opened_at DESC`,
       [req.user!.tenantId],
     ),
   ]);
-  res.json({ methods, banks, denominations, settings });
+  res.json({ methods, banks, denominations, settings, sessions });
+});
+
+/** ¿Hay alguna caja abierta? Sin caja no se abren mesas (§1.6.3).
+ * Accesible a todos los roles que gestionan mesas (no solo admin). */
+ordersRouter.get("/cash-status", async (req, res) => {
+  const open = await queryOne(
+    "SELECT id FROM cash_sessions WHERE tenant_id = $1 AND status = 'abierta' LIMIT 1",
+    [req.user!.tenantId],
+  );
+  res.json({ open: !!open });
 });
 
 /** Vista de mesas por sala: mesas + orden abierta (si la hay). */
@@ -331,11 +351,14 @@ ordersRouter.post("/:id/transfer", async (req, res) => {
   }
 });
 
-/** Pago: completo, combinado (dividir) o por producto (§1.6.3). */
+/** Pago: completo, combinado (dividir) o por producto (§1.6.3).
+ * sessionId = Caja de Pago elegida en el resumen de transacción.
+ * Devuelve los pagos con su voucher para imprimir el comprobante. */
 ordersRouter.post("/:id/pay", async (req, res) => {
   const schema = z.object({
     clientId: z.number(),
     tip: z.number().min(0).default(0),
+    sessionId: z.number().nullish(),
     payments: z.array(z.object({
       method_id: z.number(),
       bank_id: z.number().nullish(),
@@ -351,11 +374,19 @@ ordersRouter.post("/:id/pay", async (req, res) => {
     return;
   }
   try {
-    await query("SELECT pay_order($1, $2, $3, $4)", [
+    await query("SELECT pay_order($1, $2, $3, $4, $5)", [
       req.params.id, parsed.data.clientId, parsed.data.tip,
-      JSON.stringify(parsed.data.payments),
+      JSON.stringify(parsed.data.payments), parsed.data.sessionId ?? null,
     ]);
-    res.json({ ok: true });
+    const payments = await query(
+      `SELECT op.amount, op.tip_included, op.change_given, op.voucher_number,
+              pm.name AS method
+       FROM order_payments op
+       JOIN payment_methods pm ON pm.id = op.payment_method_id
+       WHERE op.order_id = $1 ORDER BY op.id`,
+      [req.params.id],
+    );
+    res.json({ ok: true, payments });
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });
   }

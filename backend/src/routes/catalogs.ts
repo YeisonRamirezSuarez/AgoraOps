@@ -68,7 +68,7 @@ catalogsRouter.use("/denominations", crudRouter({
 // §1.8.6 Impresoras (nombre inmutable — trigger en BD)
 catalogsRouter.use("/printers", crudRouter({
   table: "printers",
-  columns: ["name", "connection_type", "device_name", "ip_address", "port", "is_active"],
+  columns: ["name", "connection_type", "device_name", "ip_address", "port", "location", "is_active"],
 }));
 
 // §1.14 Grupos (eliminar con usuarios asociados lo bloquea el trigger)

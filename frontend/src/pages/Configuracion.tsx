@@ -88,10 +88,7 @@ export default function Configuracion() {
       {tab === "Denominación de moneda" && (
         <CrudPage title="denominación" endpoint="/api/catalogs/denominations"
           fields={[
-            {
-              name: "value", label: "Valor", type: "number", required: true,
-              render: (r) => cop.format(Number(r.value)),
-            },
+            { name: "value", label: "Valor", type: "money", required: true },
             { name: "is_active", label: "Estado", type: "checkbox" },
           ]} />
       )}

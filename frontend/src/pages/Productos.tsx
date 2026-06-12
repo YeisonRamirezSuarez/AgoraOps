@@ -46,11 +46,8 @@ export default function Productos() {
               name: "product_type", label: "Tipo de producto", type: "select", required: true,
               options: [{ value: "NORMAL", label: "Normal" }, { value: "COMBO", label: "Combo" }],
             },
-            {
-              name: "sale_price", label: "Precio de venta", type: "number", required: true,
-              render: (r) => cop.format(Number(r.sale_price)),
-            },
-            { name: "cost_price", label: "Precio de costo", type: "number", inTable: false },
+            { name: "sale_price", label: "Precio de venta", type: "money", required: true },
+            { name: "cost_price", label: "Precio de costo", type: "money", inTable: false },
             { name: "image_url", label: "URL de la imagen (foto del producto)", inTable: false },
             {
               name: "goes_to_kitchen", label: "¿Va a cocina?", type: "checkbox",
@@ -80,10 +77,7 @@ export default function Productos() {
           endpoint="/api/catalogs/toppings"
           fields={[
             { name: "name", label: "Nombre", required: true },
-            {
-              name: "price", label: "Precio", type: "number", required: true,
-              render: (r) => cop.format(Number(r.price)),
-            },
+            { name: "price", label: "Precio", type: "money", required: true },
             {
               name: "inventory_mode", label: "Inventario", type: "select",
               options: [
