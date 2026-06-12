@@ -20,6 +20,7 @@ import { settingsRouter } from "./routes/settings.js";
 import { inventoryRouter } from "./routes/inventory.js";
 import { reportsRouter } from "./routes/reports.js";
 import { reservationsRouter } from "./routes/reservations.js";
+import { clientsRouter } from "./routes/clients.js";
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/api/settings", settingsRouter);
 app.use("/api/inventory", inventoryRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/reservations", reservationsRouter);
+app.use("/api/clients", clientsRouter);
 
 // Manejador de errores no capturados
 app.use(

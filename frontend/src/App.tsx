@@ -17,8 +17,9 @@ import Seguridad from "./pages/Seguridad";
 import Notificaciones from "./pages/Notificaciones";
 import CambiarContrasena from "./pages/CambiarContrasena";
 import {
-  MenuPage, QrPage, ClientesPage, DomiciliosPage,
+  MenuPage, QrPage, DomiciliosPage,
 } from "./pages/Restaurante";
+import { ClientesPage } from "./pages/Clientes";
 import { ReservacionesPage } from "./pages/Reservaciones";
 
 function Protected({ children }: { children: React.ReactNode }) {
