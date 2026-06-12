@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle, ArrowUpDown, Award, Banknote, Bell, Calendar, CreditCard,
-  DollarSign, Info, Package, Smartphone, Target, TrendingUp, UtensilsCrossed, X,
+  DollarSign, Info, Package, Smartphone, Target, TrendingUp, UtensilsCrossed, X, ChevronRight,
 } from "lucide-react";
 import { api } from "../lib/api";
 
@@ -171,9 +171,9 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="fade-in-up flex items-start gap-4">
-      <div className="min-w-0 flex-1">
-      <div className="mb-6">
+    <div className="flex items-start">
+      <div className="fade-in-up min-w-0 flex-1 p-6">
+        <div className="mb-6">
         <h1 className="text-2xl font-bold">Resumen Ejecutivo</h1>
         <p className="mt-0.5 text-sm text-text-secondary">
           Monitoreo de métricas clave y rendimiento en tiempo real.
@@ -1169,7 +1169,7 @@ function AlertsRail({ lowStockCount, overdraftCount, onOpen }: {
   onOpen: (tab: AlertsTab) => void;
 }) {
   return (
-    <div className="glass sticky top-0 hidden h-[calc(100dvh-3rem)] shrink-0 flex-col items-center gap-4 rounded-xl px-2.5 py-5 md:flex">
+    <div className="glass sticky top-0 hidden h-dvh w-14 shrink-0 flex-col items-center gap-4 rounded-none border-y-0 border-r-0 py-5 shadow-[-2px_0_12px_rgba(0,0,0,0.05)] md:flex">
       <button
         onClick={() => onOpen("low-stock")}
         className="flex flex-col items-center gap-2 text-text-secondary transition hover:text-accent-blue"
@@ -1218,12 +1218,12 @@ function AlertsPanel({ open, onClose, lowStock, overdrafts }: {
             <h2 className="flex items-center gap-2 font-bold">
               Notificaciones
               {items.length > 0 && (
-                <span className="rounded-full bg-accent-rose px-2 py-0.5 text-xs font-bold text-white">
+                <span className="rounded-full bg-accent-rose/10 px-2 py-0.5 text-xs font-bold text-accent-rose">
                   {items.length}
                 </span>
               )}
             </h2>
-            <p className="mt-0.5 text-xs text-text-secondary">
+            <p className="mt-0.5 text-xs text-text-muted">
               {open === "low-stock" ? "Bajo Stock detectado" : "Stock Negativo Detectado"}
             </p>
           </div>
@@ -1232,7 +1232,7 @@ function AlertsPanel({ open, onClose, lowStock, overdrafts }: {
             aria-label="Cerrar notificaciones"
             className="rounded-lg p-1.5 text-text-secondary transition hover:bg-bg-tertiary"
           >
-            <X size={18} />
+            <ChevronRight size={20} />
           </button>
         </div>
 
@@ -1245,24 +1245,19 @@ function AlertsPanel({ open, onClose, lowStock, overdrafts }: {
               </p>
             </div>
           ) : (
-            // Línea de tiempo estilo Polaris: línea vertical + punto por card
-            <div className="relative space-y-4 pl-5">
-              <div className="absolute bottom-4 left-[5px] top-2 w-px bg-border-medium" />
+            <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="relative">
-                  <span className="absolute -left-[1.13rem] top-4 h-3 w-3 rounded-full bg-accent-rose ring-4 ring-bg-secondary" />
+                <div key={item.id} className="flex items-center gap-3">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-rose" />
                   <a
-                    href="/inventario"
-                    className="flex gap-2.5 rounded-xl border border-border-subtle bg-bg-secondary p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    href="/inventario?tab=Movimientos&new=true"
+                    className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-bg-secondary p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                   >
-                    <span className="w-1 shrink-0 self-stretch rounded-full bg-accent-rose" />
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-bold uppercase">{item.name}</h3>
-                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-accent-rose/30 bg-accent-rose/10 px-2 py-0.5 text-[10px] font-bold uppercase text-accent-rose">
-                        <AlertTriangle size={11} />
-                        Quedan {fmtNumber(Number(item.stock))} {item.unit}
-                      </span>
-                    </div>
+                    <h3 className="mb-2 truncate text-[13px] font-bold text-text-primary uppercase">{item.name}</h3>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-rose/20 bg-accent-rose/10 px-2 py-0.5 text-[10px] font-bold uppercase text-accent-rose">
+                      <Bell size={10} strokeWidth={2.5} />
+                      Quedan {fmtNumber(Number(item.stock))} {item.unit}
+                    </span>
                   </a>
                 </div>
               ))}

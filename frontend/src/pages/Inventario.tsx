@@ -85,6 +85,14 @@ function MovementsTab() {
     api<Record<string, unknown>[]>("/api/inventory/movements").then(setRows).catch(() => {});
   }, []);
   useEffect(load, [load]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "true") {
+      setOpen(true);
+      window.history.replaceState(null, "", "/inventario?tab=Movimientos");
+    }
+  }, []);
   const { slice, bar } = usePagination(rows);
 
   // Registro tipo página (estilo Polaris), reemplaza al modal

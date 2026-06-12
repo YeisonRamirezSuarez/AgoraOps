@@ -215,7 +215,7 @@ export default function Orden() {
   );
 
   return (
-    <div className="fade-in-up -m-6 flex min-h-[calc(100vh)] flex-col">
+    <div className="fade-in-up -m-6 flex min-h-[100dvh] flex-col">
       {/* ══════════ Cabecera a lo ancho del contenido (estilo Polaris):
           título + mesero a la izquierda, TOTAL al extremo derecho ══════════ */}
       <header className="glass flex items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-4 py-3 sm:px-6">
