@@ -19,6 +19,7 @@ import {
   LayoutGrid, ChefHat, Bell, X,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import NotificationBell from "./NotificationBell";
 
 interface NavChild {
   label: string;
@@ -290,6 +291,9 @@ export default function Layout() {
       <main className={`flex-1 overflow-y-auto ${location.pathname === "/dashboard" ? "p-0 " + (hideMobileNav ? "" : "pb-24 md:pb-0") : "p-6 " + (hideMobileNav ? "" : "pb-24 md:pb-6")}`}>
         <Outlet />
       </main>
+
+      {/* Campana de notificaciones (réplica Polaris), visible en toda la app */}
+      <NotificationBell />
 
       {/* ══════════ Barra de navegación inferior (solo teléfonos) ══════════ */}
       {!hideMobileNav && (
