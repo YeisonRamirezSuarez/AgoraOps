@@ -63,19 +63,121 @@ ordersRouter.get("/cash-status", async (req, res) => {
   res.json({ open: !!open });
 });
 
-/** Vista de mesas por sala: mesas + orden abierta (si la hay). */
+/** Vista de mesas por sala: mesas + orden abierta (si la hay).
+ * is_reserved replica el estado "Reservada" de Polaris: mesa libre con una
+ * reservación vigente ahora (fecha hoy, dentro de la ventana de horas y en
+ * etapa distinta de Cancelado). */
 ordersRouter.get("/board", async (req, res) => {
   const rows = await query(
     `SELECT t.id AS table_id, t.number, t.seats, t.room_id, r.name AS room_name,
             o.id AS order_id, o.order_number, o.opened_at, o.comment,
             o.customer_name, o.attended_by,
             COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi
-              WHERE oi.order_id = o.id AND oi.kitchen_status <> 'cancelado'), 0) AS total
+              WHERE oi.order_id = o.id AND oi.kitchen_status <> 'cancelado'), 0) AS total,
+            false AS is_reserved
      FROM tables t
      JOIN rooms r ON r.id = t.room_id AND r.is_active
      LEFT JOIN orders o ON o.table_id = t.id AND o.status = 'abierta'
      WHERE t.tenant_id = $1 AND t.is_active
      ORDER BY r.name, t.number`,
+    [req.user!.tenantId],
+  );
+  res.json(rows);
+});
+
+/** Domiciliarios activos + empresas para el flujo de domicilio del mesero
+ * (Polaris: domiciliariosActivos/empresasDomiciliarios embebidos en la orden;
+ * la gestión completa es de admin en /api/delivery). */
+ordersRouter.get("/delivery-options", async (req, res) => {
+  const [drivers, companies] = await Promise.all([
+    query(
+      `SELECT p.id, p.first_name, p.last_name,
+              (p.first_name || ' ' || p.last_name) AS name,
+              p.phone, p.plate, c.name AS company_name
+       FROM delivery_personnel p
+       JOIN delivery_companies c ON c.id = p.company_id
+       WHERE p.tenant_id = $1 AND p.status = 'ACTIVO'
+       ORDER BY p.first_name`,
+      [req.user!.tenantId],
+    ),
+    query(
+      `SELECT id, name FROM delivery_companies
+       WHERE tenant_id = $1 AND status = 'ACTIVO' ORDER BY name`,
+      [req.user!.tenantId],
+    ),
+  ]);
+  res.json({ drivers, companies });
+});
+
+/** Registro rápido de domiciliario desde la orden (Polaris:
+ * register_delivery_personnel_quick — no requiere rol admin). */
+ordersRouter.post("/delivery-personnel-quick", async (req, res) => {
+  const schema = z.object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    phone: z.string().min(1),
+    plate: z.string().min(1),
+    companyId: z.number(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Completa todos los campos para continuar." });
+    return;
+  }
+  const row = await queryOne<{ id: number }>(
+    `INSERT INTO delivery_personnel
+       (tenant_id, company_id, first_name, last_name, phone, plate, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVO') RETURNING id`,
+    [
+      req.user!.tenantId, parsed.data.companyId, parsed.data.firstName.trim(),
+      parsed.data.lastName.trim(),
+      parsed.data.phone.replace(/\D/g, ""),
+      parsed.data.plate.trim().toUpperCase(),
+    ],
+  );
+  res.status(201).json({ ok: true, id: row!.id, message: "Domiciliario creado correctamente." });
+});
+
+/** Asignar cliente y/o domiciliario a una orden de domicilio (Polaris:
+ * register_cliente_dilevery / register_delivery_personnel). */
+ordersRouter.put("/:id/delivery", async (req, res) => {
+  const schema = z.object({
+    clientId: z.number().nullish(),
+    personnelId: z.number().nullish(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos de domicilio inválidos" });
+    return;
+  }
+  const sets: string[] = [];
+  const params: unknown[] = [req.params.id, req.user!.tenantId];
+  if (parsed.data.clientId !== undefined) {
+    params.push(parsed.data.clientId);
+    sets.push(`client_id = $${params.length}`);
+  }
+  if (parsed.data.personnelId !== undefined) {
+    params.push(parsed.data.personnelId);
+    sets.push(`delivery_personnel_id = $${params.length}`);
+  }
+  if (sets.length === 0) {
+    res.status(400).json({ error: "Nada para actualizar" });
+    return;
+  }
+  await query(
+    `UPDATE orders SET ${sets.join(", ")} WHERE id = $1 AND tenant_id = $2`,
+    params,
+  );
+  res.json({ ok: true, message: "Cliente asignado correctamente" });
+});
+
+/** Impresoras activas para comanda/prefactura (Polaris: printersComanda y
+ * printersPrefactura embebidas en la pantalla de orden). */
+ordersRouter.get("/printers/list", async (req, res) => {
+  const rows = await query(
+    `SELECT id, name, connection_type, device_name AS printer_name,
+            ip_address, port, purpose, url_send
+     FROM printers WHERE tenant_id = $1 AND is_active ORDER BY name`,
     [req.user!.tenantId],
   );
   res.json(rows);
@@ -155,14 +257,16 @@ ordersRouter.get("/:id", async (req, res) => {
     return;
   }
   const items = await query(
-    `SELECT oi.*, COALESCE(json_agg(json_build_object(
-        'id', oit.id, 'topping_name', oit.topping_name,
+    `SELECT oi.*, c.name AS customer_name_shared,
+            COALESCE(json_agg(json_build_object(
+        'id', oit.id, 'topping_id', oit.topping_id, 'topping_name', oit.topping_name,
         'topping_price', oit.topping_price, 'quantity', oit.quantity))
         FILTER (WHERE oit.id IS NOT NULL), '[]') AS toppings
      FROM order_items oi
      LEFT JOIN order_item_toppings oit ON oit.order_item_id = oi.id
+     LEFT JOIN clients c ON c.id = oi.customer_id
      WHERE oi.order_id = $1
-     GROUP BY oi.id ORDER BY oi.id`,
+     GROUP BY oi.id, c.name ORDER BY oi.id`,
     [req.params.id],
   );
   res.json({ ...order, items });
@@ -175,6 +279,7 @@ ordersRouter.post("/:id/items", async (req, res) => {
     variantId: z.number().nullish(),
     quantity: z.number().int().positive(),
     notes: z.string().optional(),
+    customerId: z.number().nullish(), // Compras Compartidas (Polaris)
     toppings: z.array(z.object({
       toppingId: z.number(),
       quantity: z.number().int().positive().default(1),
@@ -185,7 +290,7 @@ ordersRouter.post("/:id/items", async (req, res) => {
     res.status(400).json({ error: "Datos del producto inválidos" });
     return;
   }
-  const { productId, variantId, quantity, notes, toppings } = parsed.data;
+  const { productId, variantId, quantity, notes, toppings, customerId } = parsed.data;
 
   const product = await queryOne<{
     name: string; sale_price: string; cost_price: string; printer_id: number | null;
@@ -234,12 +339,13 @@ ordersRouter.post("/:id/items", async (req, res) => {
   try {
     const item = await queryOne<{ id: number }>(
       `INSERT INTO order_items (order_id, product_id, variant_id, product_name,
-         quantity, unit_price, cost_price, subtotal, notes, unique_code, printer_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+         quantity, unit_price, cost_price, subtotal, notes, unique_code, printer_id,
+         customer_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [
         req.params.id, productId, variantId ?? null, name, quantity, unitPrice,
         Number(product.cost_price), subtotal, notes ?? null, uniqueCode,
-        product.printer_id,
+        product.printer_id, customerId ?? null,
       ],
     );
     for (const t of toppings) {
@@ -255,11 +361,12 @@ ordersRouter.post("/:id/items", async (req, res) => {
   }
 });
 
-/** Editar/eliminar ítem: solo sin confirmar (§1.6.3). */
+/** Eliminar ítem: solo pendientes ('nuevo') o re-pedidos sin confirmar
+ * ('devuelto') — Polaris action=deleteProduct. */
 ordersRouter.delete("/:id/items/:itemId", async (req, res) => {
   const row = await queryOne(
     `DELETE FROM order_items WHERE id = $1 AND order_id = $2
-       AND kitchen_status = 'nuevo' RETURNING id`,
+       AND kitchen_status IN ('nuevo', 'devuelto') RETURNING id`,
     [req.params.itemId, req.params.id],
   );
   if (!row) {
@@ -267,6 +374,90 @@ ordersRouter.delete("/:id/items/:itemId", async (req, res) => {
       error: "Solo se pueden eliminar productos sin confirmar.",
     });
     return;
+  }
+  res.json({ ok: true });
+});
+
+/** Editar ítem pendiente (Polaris blank_product_update: cantidad, nota,
+ * toppings y cliente, solo antes de confirmar). */
+ordersRouter.put("/:id/items/:itemId", async (req, res) => {
+  const schema = z.object({
+    quantity: z.number().int().positive(),
+    notes: z.string().optional(),
+    customerId: z.number().nullish(),
+    toppings: z.array(z.object({
+      toppingId: z.number(),
+      quantity: z.number().int().positive().default(1),
+    })).default([]),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos del producto inválidos" });
+    return;
+  }
+  const { quantity, notes, toppings, customerId } = parsed.data;
+
+  const item = await queryOne<{ id: number; unit_price: string }>(
+    `SELECT id, unit_price FROM order_items
+     WHERE id = $1 AND order_id = $2 AND kitchen_status IN ('nuevo', 'devuelto')`,
+    [req.params.itemId, req.params.id],
+  );
+  if (!item) {
+    res.status(409).json({ error: "Solo se pueden editar productos sin confirmar." });
+    return;
+  }
+
+  const toppingsTotal = toppings.length
+    ? Number(
+        (await queryOne<{ total: string }>(
+          `SELECT COALESCE(SUM(t.price * x.qty), 0) AS total
+           FROM unnest($1::int[], $2::int[]) AS x(id, qty)
+           JOIN toppings t ON t.id = x.id`,
+          [toppings.map((t) => t.toppingId), toppings.map((t) => t.quantity)],
+        ))?.total ?? 0,
+      )
+    : 0;
+  const subtotal = (Number(item.unit_price) + toppingsTotal) * quantity;
+
+  try {
+    await query(
+      `UPDATE order_items SET quantity = $1, notes = $2, subtotal = $3,
+         customer_id = $4 WHERE id = $5`,
+      [quantity, notes ?? null, subtotal, customerId ?? null, item.id],
+    );
+    await query("DELETE FROM order_item_toppings WHERE order_item_id = $1", [item.id]);
+    for (const t of toppings) {
+      await query(
+        `INSERT INTO order_item_toppings (order_item_id, topping_id, topping_name, topping_price, quantity)
+         SELECT $1, id, name, price, $3 FROM toppings WHERE id = $2`,
+        [item.id, t.toppingId, t.quantity],
+      );
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+/** Asignar cliente a ítems (Polaris action=update_cart_customer — modal de
+ * asignación de Compras Compartidas). */
+ordersRouter.put("/:id/items-customer", async (req, res) => {
+  const schema = z.object({
+    assignments: z.array(z.object({
+      itemId: z.number(),
+      customerId: z.number().nullable(),
+    })).min(1),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Asignaciones inválidas" });
+    return;
+  }
+  for (const a of parsed.data.assignments) {
+    await query(
+      "UPDATE order_items SET customer_id = $1 WHERE id = $2 AND order_id = $3",
+      [a.customerId, a.itemId, req.params.id],
+    );
   }
   res.json({ ok: true });
 });
@@ -300,11 +491,26 @@ ordersRouter.put("/:id/comment", async (req, res) => {
   res.json({ ok: true });
 });
 
-/** Devolución/cancelación de producto (descripción obligatoria, §1.6.3). */
-ordersRouter.post("/:id/items/:itemId/cancel", async (req, res) => {
+/** Devolución por cantidades (Polaris action=devolution, modal-return).
+ * body: { reason, items: [{itemId, quantity}] } — motivo obligatorio. */
+ordersRouter.post("/:id/devolution", async (req, res) => {
+  const schema = z.object({
+    reason: z.string(),
+    items: z.array(z.object({
+      itemId: z.number(),
+      quantity: z.number().int().positive(),
+    })).min(1, "Selecciona productos."),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Selecciona productos." });
+    return;
+  }
   try {
-    await query("SELECT cancel_order_item($1, $2, $3, $4)", [
-      req.params.itemId, req.body.reason, req.user!.fullName, req.user!.id,
+    await query("SELECT devolution_order_items($1, $2, $3, $4, $5)", [
+      req.params.id, parsed.data.reason,
+      JSON.stringify(parsed.data.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity }))),
+      req.user!.fullName, req.user!.id,
     ]);
     res.json({ ok: true });
   } catch (err) {
@@ -312,14 +518,28 @@ ordersRouter.post("/:id/items/:itemId/cancel", async (req, res) => {
   }
 });
 
-/** Solicitar de nuevo (solo si está Listo, §1.6.3). */
-ordersRouter.post("/:id/items/:itemId/reorder", async (req, res) => {
+/** Solicitar de nuevo en lote (Polaris action=request_order): solo
+ * entregados/listos; el nuevo ítem vuelve al carrito como "Devuelto". */
+ordersRouter.post("/:id/reorder", async (req, res) => {
+  const schema = z.object({
+    reason: z.string(),
+    items: z.array(z.object({
+      itemId: z.number(),
+      quantity: z.number().int().positive(),
+    })).min(1, "Selecciona productos para pedir de nuevo."),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Selecciona productos para pedir de nuevo." });
+    return;
+  }
   try {
-    const row = await queryOne<{ reorder_item: number }>(
-      "SELECT reorder_item($1, $2, $3)",
-      [req.params.itemId, req.body.reason, req.user!.fullName],
-    );
-    res.json({ ok: true, newItemId: row?.reorder_item });
+    await query("SELECT reorder_order_items($1, $2, $3, $4)", [
+      req.params.id, parsed.data.reason,
+      JSON.stringify(parsed.data.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity }))),
+      req.user!.fullName,
+    ]);
+    res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });
   }
@@ -404,4 +624,172 @@ ordersRouter.post("/:id/close", async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });
   }
+});
+
+/* ════════════ Impresión (formatos de Polaris) ════════════
+ * La app envía estos JSON al bridge local (http://localhost:8080/voucher en
+ * equipos POS) o al agente de la impresora (printers.url_send). Formatos
+ * capturados de blank_json_comanda y blank_printer_pago (ver spec). */
+
+interface PrintLine {
+  tipo: "linea" | "matriz";
+  tam: "p" | "m" | "g";
+  align?: string | string[];
+  valor: string | string[][];
+  longitud?: string[];
+}
+
+/** Parte el nombre en renglones de `width` caracteres (matriz de Polaris). */
+function wrapName(name: string, width = 18): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < name.length; i += width) chunks.push(name.slice(i, i + width));
+  return chunks.length ? chunks : [""];
+}
+
+async function orderPrintContext(orderId: string, tenantId: string | null) {
+  const order = await queryOne<{
+    id: number; order_number: string; attended_by: string | null;
+    comment: string | null; table_number: number | null; room_name: string | null;
+    tip: string;
+  }>(
+    `SELECT o.id, o.order_number, o.attended_by, o.comment, o.tip,
+            t.number AS table_number, r.name AS room_name
+     FROM orders o
+     LEFT JOIN tables t ON t.id = o.table_id
+     LEFT JOIN rooms r ON r.id = o.room_id
+     WHERE o.id = $1 AND o.tenant_id = $2`,
+    [orderId, tenantId],
+  );
+  const settings = await queryOne<{
+    business_name: string; address: string | null; tax_id: string | null;
+    tip_enabled: boolean; tip_percentage: string;
+  }>(
+    `SELECT business_name, address, tax_id, tip_enabled, tip_percentage
+     FROM business_settings WHERE tenant_id = $1`,
+    [tenantId],
+  );
+  return { order, settings };
+}
+
+/** Comanda (Polaris blank_json_comanda): {json_local, json_externo}.
+ * ?items=1,2,3 limita a esos ítems (al confirmar se imprimen solo los nuevos). */
+ordersRouter.get("/:id/comanda", async (req, res) => {
+  const { order } = await orderPrintContext(req.params.id, req.user!.tenantId);
+  if (!order) {
+    res.status(404).json({ error: "Orden no encontrada" });
+    return;
+  }
+  const itemIds = String(req.query.items ?? "")
+    .split(",").map((s) => Number(s)).filter((n) => n > 0);
+
+  const items = await query<{
+    product_name: string; quantity: number; notes: string | null;
+    toppings: { topping_name: string; quantity: number }[];
+  }>(
+    `SELECT oi.product_name, oi.quantity, oi.notes,
+            COALESCE(json_agg(json_build_object(
+              'topping_name', oit.topping_name, 'quantity', oit.quantity))
+              FILTER (WHERE oit.id IS NOT NULL), '[]') AS toppings
+     FROM order_items oi
+     LEFT JOIN order_item_toppings oit ON oit.order_item_id = oi.id
+     WHERE oi.order_id = $1 AND oi.kitchen_status <> 'cancelado'
+       AND ($2::int[] = '{}' OR oi.id = ANY($2))
+     GROUP BY oi.id ORDER BY oi.id`,
+    [req.params.id, itemIds],
+  );
+
+  const now = new Date();
+  const fecha = now.toLocaleDateString("sv-SE", { timeZone: "America/Bogota" });
+  const hora = now.toLocaleTimeString("es-CO", { timeZone: "America/Bogota", hour12: false });
+
+  const matriz: string[][] = [["Cant", "Productos"]];
+  for (const it of items) {
+    const lines = wrapName(it.product_name);
+    matriz.push([` ${it.quantity}`, lines[0]]);
+    for (const extra of lines.slice(1)) matriz.push([" ", extra]);
+    for (const tp of it.toppings) {
+      for (const tl of wrapName(`+ ${tp.topping_name} x${tp.quantity}`)) {
+        matriz.push([" ", tl]);
+      }
+    }
+    if (it.notes) {
+      for (const nl of wrapName(`NOTA: ${it.notes}`)) matriz.push([" ", nl]);
+    }
+    matriz.push(["", ""]);
+  }
+
+  const imprimir: PrintLine[] = [
+    { tipo: "linea", tam: "m", align: "c", valor: `PEDIDO N ${order.id}` },
+    { tipo: "linea", tam: "m", valor: "" },
+    { tipo: "linea", tam: "m", align: "i", valor: `FECHA: ${fecha}` },
+    { tipo: "linea", tam: "m", align: "i", valor: `HORA: ${hora}` },
+    { tipo: "linea", tam: "m", align: "i", valor: `ZONA: ${order.room_name ?? ""}` },
+    { tipo: "linea", tam: "m", valor: "" },
+    { tipo: "linea", tam: "m", align: "i", valor: `MESA #: ${order.table_number ?? ""}` },
+    { tipo: "linea", tam: "m", align: "i", valor: `MESERO: ${order.attended_by ?? ""}` },
+    { tipo: "linea", tam: "m", valor: "" },
+    { tipo: "matriz", tam: "m", valor: matriz, longitud: ["5", "30"], align: ["c", "i"] },
+    { tipo: "linea", tam: "m", valor: "" },
+    { tipo: "linea", tam: "m", valor: "" },
+    { tipo: "linea", tam: "p", align: "c", valor: "Impreso por AgoraOps" },
+    { tipo: "linea", tam: "m", valor: "" },
+  ];
+
+  res.json({
+    json_local: JSON.stringify({ imprimir }),
+    json_externo: JSON.stringify({
+      pedido: String(order.id),
+      fecha, hora,
+      mesero: order.attended_by ?? "",
+      mesa: order.table_number,
+      zona: order.room_name ?? "",
+      comentario: order.comment ?? "",
+      productos: items.map((i) => ({ nombre: i.product_name, cantidad: i.quantity })),
+      conexion: { tipo: "", parametros: ["", ""] },
+    }),
+  });
+});
+
+/** Prefactura (Polaris blank_printer_pago type=Pre_Factura). */
+ordersRouter.get("/:id/prefactura", async (req, res) => {
+  const { order, settings } = await orderPrintContext(req.params.id, req.user!.tenantId);
+  if (!order) {
+    res.status(404).json({ error: "Orden no encontrada" });
+    return;
+  }
+  const items = await query<{
+    product_name: string; quantity: number; unit_price: string; subtotal: string;
+  }>(
+    `SELECT product_name, quantity, unit_price, subtotal FROM order_items
+     WHERE order_id = $1 AND kitchen_status <> 'cancelado' ORDER BY id`,
+    [req.params.id],
+  );
+  const subtotal = items.reduce((s, i) => s + Number(i.subtotal), 0);
+  const propina = settings?.tip_enabled
+    ? Math.round(subtotal * Number(settings.tip_percentage) / 100)
+    : 0;
+
+  res.json({
+    formato_moneda: "es-CO",
+    comercio: settings?.business_name ?? "",
+    direccion: settings?.address ?? "",
+    nit: settings?.tax_id ?? "",
+    pais: "COLOMBIA",
+    ciudad: "",
+    pedido: order.id,
+    mesa: order.table_number,
+    mesero: order.attended_by ?? "",
+    simbolo_moneda: "$",
+    productos: items.map((i) => ({
+      nombre: i.product_name,
+      cantidad: i.quantity,
+      valor_unitario: Number(i.unit_price),
+      valor: Number(i.subtotal),
+    })),
+    subtotal,
+    total: subtotal + propina,
+    propina,
+    impuestos: [],
+    conexion: { tipo: "", parametros: [""] },
+  });
 });

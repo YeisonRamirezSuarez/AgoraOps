@@ -96,8 +96,12 @@ export default function Pago() {
   const tip = tipOn && tipEnabled ? Math.round((amountDue * tipPct) / 100) : 0;
   const toPay = amountDue + tip;
   const entered = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
-  const missing = Math.max(0, toPay - entered);
-  const change = Math.max(0, entered - toPay);
+  
+  // Si no hay monto ingresado y no está dividido, asumimos PAGO EXACTO
+  const isExactPayment = !split && lines.length === 1 && !lines[0].amount && toPay > 0;
+  const actualEntered = isExactPayment ? toPay : entered;
+  const missing = Math.max(0, toPay - actualEntered);
+  const change = Math.max(0, actualEntered - toPay);
 
   const methodName = (id: string) =>
     options?.methods.find((m) => String(m.id) === id)?.name ?? "";
@@ -123,9 +127,19 @@ export default function Pago() {
       toast("error", "Seleccione los productos a pagar.");
       return;
     }
-    const valid = lines.filter((l) => l.method_id && Number(l.amount) > 0);
-    if (valid.length === 0 || missing > 0) {
-      toast("error", `Faltan ${cop.format(missing)} por ingresar.`);
+    
+    let currentLines = lines;
+    if (isExactPayment) {
+      currentLines = [{ ...lines[0], amount: String(toPay) }];
+      setLines(currentLines);
+    }
+
+    const valid = currentLines.filter((l) => l.method_id && Number(l.amount) > 0);
+    const currentEntered = currentLines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+    const currentMissing = Math.max(0, toPay - currentEntered);
+
+    if (valid.length === 0 || currentMissing > 0) {
+      toast("error", `Faltan ${cop.format(currentMissing)} por ingresar.`);
       return;
     }
     // Transferencia requiere banco (§1.6.3)
@@ -277,8 +291,9 @@ ${voucher.payments.map((p) =>
     : methodName(singleLine?.method_id ?? "");
 
   return (
-    <div className="fade-in-up">
-      {/* Encabezado */}
+    <>
+      <div className="fade-in-up">
+        {/* Encabezado */}
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(`/mesas/${orderId}`)}
@@ -535,6 +550,7 @@ ${voucher.payments.map((p) =>
           </Button>
         </div>
       </div>
+      </div>
 
       {/* ══════════ Resumen de Transacción (manual §1.6.3) ══════════ */}
       {summaryOpen && (
@@ -585,7 +601,7 @@ ${voucher.payments.map((p) =>
             <div className="mt-3 space-y-1 rounded-xl bg-accent-amber/10 px-4 py-3 text-sm">
               <div className="flex items-center justify-between text-accent-orange">
                 <span>Recibido:</span>
-                <span className="font-bold">{cop.format(entered)}</span>
+                <span className="font-bold">{cop.format(actualEntered)}</span>
               </div>
               <div className="flex items-center justify-between text-accent-orange">
                 <span>Cambio:</span>
@@ -632,7 +648,7 @@ ${voucher.payments.map((p) =>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

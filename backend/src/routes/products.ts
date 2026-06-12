@@ -55,6 +55,60 @@ productsRouter.get("/menu/list", requireAuth, async (req, res) => {
   res.json(rows);
 });
 
+/** Menú con la forma de Polaris (get_products_by_category): productos con
+ * variantes, toppings y receta, más mapa de inventario {id: {name, stock}}
+ * para la validación de disponibilidad en el cliente (array_inventario). */
+productsRouter.get("/menu/polaris", requireAuth, async (req, res) => {
+  const weekday = new Date().getDay();
+  const [products, inventory] = await Promise.all([
+    query(
+      `SELECT p.id, p.name, p.description AS "desc", p.sale_price AS price,
+              p.is_inventariable, p.goes_to_kitchen, p.product_type AS type_product,
+              p.category_id, c.name AS category_name,
+              COALESCE(mp.sort_order, 999) AS category_order,
+              COALESCE((SELECT json_agg(json_build_object(
+                  'id', v.id, 'name', v.name, 'price', v.sale_price,
+                  'uses_inventory', v.uses_inventory,
+                  'receta', (SELECT COALESCE(json_agg(json_build_object(
+                      'product_id', r.inventory_product_id, 'quantity', r.quantity_used)), '[]')
+                    FROM recipes r WHERE r.variant_id = v.id)))
+                FROM product_variants v
+                WHERE v.product_id = p.id AND v.is_active), '[]') AS variantes,
+              COALESCE((SELECT json_agg(json_build_object(
+                  'id', t.id, 'name', t.name, 'price', t.price,
+                  'max_allowed', pt.max_allowed))
+                FROM product_toppings pt
+                JOIN toppings t ON t.id = pt.topping_id AND t.is_active
+                WHERE pt.product_id = p.id), '[]') AS toppings,
+              (SELECT json_agg(json_build_object(
+                  'product_id', r.inventory_product_id, 'quantity', r.quantity_used))
+                FROM recipes r WHERE r.product_id = p.id) AS receta
+       FROM products p
+       JOIN categories c ON c.id = p.category_id AND c.is_active
+       LEFT JOIN menu_priority mp
+         ON mp.category_id = c.id AND mp.weekday = $2 AND mp.tenant_id = $1
+       WHERE p.tenant_id = $1 AND p.is_active AND p.sale_price >= 0
+         AND (
+           NOT EXISTS (SELECT 1 FROM menu_priority WHERE tenant_id = $1 AND weekday = $2)
+           OR mp.id IS NOT NULL
+         )
+       ORDER BY category_order, c.name, p.name`,
+      [req.user!.tenantId, weekday],
+    ),
+    query(
+      `SELECT id, name AS product_name, stock AS quantity
+       FROM inventory_products WHERE tenant_id = $1 AND is_active`,
+      [req.user!.tenantId],
+    ),
+  ]);
+
+  const inventoryMap: Record<string, { product_name: string; quantity: number }> = {};
+  for (const row of inventory as { id: number; product_name: string; quantity: string }[]) {
+    inventoryMap[row.id] = { product_name: row.product_name, quantity: Number(row.quantity) };
+  }
+  res.json({ status: "success", products, inventory: inventoryMap });
+});
+
 /** Receta del producto (PHP: consumo_inventario). */
 productsRouter.get("/:id/recipe", requireAuth, requireAdmin, async (req, res) => {
   const rows = await query(
