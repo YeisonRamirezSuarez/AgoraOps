@@ -37,7 +37,8 @@ body,
 }
 
 body {
-  background: var(--color-bg-primary);
+  background: radial-gradient(ellipse at bottom, hsl(199 90% 95%), hsl(220 20% 96%) 65%);
+  background-attachment: fixed;
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

@@ -35,7 +35,7 @@ export default function Login() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(ellipse_at_top,hsl(199_90%_95%),hsl(220_20%_96%)_65%)] p-4">
+    <main className="grid min-h-[100dvh] place-items-center p-4">
       <div className="glass fade-in-up w-full max-w-sm rounded-2xl p-8 shadow-2xl">
         <div className="mb-8 text-center">
           <h1 className="bg-gradient-to-br from-accent-blue to-accent-cyan bg-clip-text text-2xl font-bold text-transparent">

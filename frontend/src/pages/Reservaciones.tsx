@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, CalendarPlus, CheckCircle2, ChevronDown, ChevronUp,
-  HelpCircle, Plus, Save, Search, SquarePen, Trash2, XCircle,
+  HelpCircle, Plus, Save, Search, Pencil, Trash2, XCircle,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { Button, Input, PageHeader, usePagination } from "../components/ui";
@@ -40,10 +40,10 @@ interface Reservation {
 interface Client { id: number; name: string; phone: string | null }
 
 /** Etapas Polaris: 1 Reservado, 2 Confirmado, 3 Cancelado. */
-const STAGES: Record<number, { label: string; bg: string }> = {
-  1: { label: "Reservado", bg: "#028303" },
-  2: { label: "Confirmado", bg: "#CE1300" },
-  3: { label: "Cancelado", bg: "#A4A2A2" },
+const STAGES: Record<number, { label: string; classNames: string }> = {
+  1: { label: "Reservado", classNames: "bg-accent-blue/15 text-accent-blue-hover" },
+  2: { label: "Confirmado", classNames: "bg-accent-emerald/15 text-accent-emerald" },
+  3: { label: "Cancelado", classNames: "bg-accent-rose/15 text-accent-rose" },
 };
 
 const MSG_PAST = "Reservas aceptadas a partir de hoy solamente";
@@ -471,7 +471,7 @@ function ReservaForm({ editing, clients, onDone, onBack }: {
 // Todas las columnas siempre visibles; en pantallas angostas el contenedor
 // (overflow-x-auto + min-w) genera scroll horizontal en vez de ocultarlas
 const GRID_COLS =
-  "grid grid-cols-[44px_1fr_1fr_64px_84px_1fr_140px] items-center";
+  "grid grid-cols-[80px_1fr_1fr_64px_84px_1fr_140px] items-center";
 
 export function ReservacionesPage() {
   const [rows, setRows] = useState<Reservation[]>([]);
@@ -542,43 +542,79 @@ export function ReservacionesPage() {
             <div key={client} className="glass overflow-hidden rounded-2xl">
               <button type="button"
                 onClick={() => setCollapsed((c) => ({ ...c, [client]: !c[client] }))}
-                className="flex w-full items-center gap-2 bg-[hsl(222_25%_15%)] px-4 py-2.5 text-left text-sm font-semibold text-white">
+                className="flex w-full items-center gap-2 border-b border-border-subtle bg-border-subtle px-4 py-3 text-left text-sm font-bold text-text-primary">
                 <ChevronDown size={15}
                   className={`transition-transform ${collapsed[client] ? "-rotate-90" : ""}`} />
                 Cliente : {client}
               </button>
               {!collapsed[client] && (
-                <div className="overflow-x-auto">
-                  <div className="min-w-[640px]">
-                    <div className={`${GRID_COLS} border-b border-border-subtle bg-accent-amber/15 px-2 py-2 text-center text-xs font-semibold`}>
-                      <span />
-                      <span>Fecha de reserva</span>
-                      <span>Hora de inicio</span>
-                      <span>Horas</span>
-                      <span>Personas</span>
-                      <span>Teléfono</span>
-                      <span>Estado de la reserva</span>
-                    </div>
-                    {list.map((r) => (
-                      <div key={r.id}
-                        className={`${GRID_COLS} border-b border-border-subtle/60 px-2 text-center text-sm last:border-0`}>
+                <div className="divide-y divide-border-subtle/60">
+                  {/* Encabezado Desktop */}
+                  <div className={`hidden md:grid ${GRID_COLS} whitespace-nowrap border-b border-border-subtle bg-bg-tertiary pl-2 pr-0 py-3 text-center text-xs font-medium uppercase tracking-wide text-text-secondary`}>
+                    <span>Acciones</span>
+                    <span>Fecha</span>
+                    <span>Hora</span>
+                    <span>Horas</span>
+                    <span>Personas</span>
+                    <span>Teléfono</span>
+                    <span>Estado</span>
+                  </div>
+                  {list.map((r) => (
+                    <div key={r.id} className="group flex flex-col p-4 text-sm transition hover:bg-bg-tertiary md:grid md:grid-cols-[80px_1fr_1fr_64px_84px_1fr_140px] md:items-stretch md:p-0 md:pl-2 md:pr-0 md:text-center">
+                      
+                      {/* Versión móvil: Encabezado con estado y botón editar */}
+                      <div className="mb-3 flex items-center justify-between md:hidden">
+                        <span className={`rounded-lg px-2.5 py-1 text-[11px] font-bold shadow-sm ${STAGES[r.stage_id]?.classNames}`}>
+                          {STAGES[r.stage_id]?.label}
+                        </span>
                         <button type="button" title="Editar este registro"
                           onClick={() => setView({ mode: "form", editing: r })}
-                          className="mx-auto rounded-lg p-1.5 text-text-muted transition hover:bg-bg-tertiary hover:text-accent-blue">
-                          <SquarePen size={15} />
+                          className="flex items-center gap-1.5 rounded-lg border border-border-subtle px-2.5 py-1 text-xs font-semibold text-text-secondary transition hover:bg-bg-tertiary hover:text-accent-blue">
+                          <Pencil size={14} /> Editar
                         </button>
-                        <span className="py-2.5">{fmtDate(r.reservation_date)}</span>
-                        <span className="py-2.5">{r.reservation_time}</span>
-                        <span className="py-2.5">{r.number_hours}</span>
-                        <span className="py-2.5">{r.people}</span>
-                        <span className="py-2.5">{r.client_phone}</span>
-                        <span className="grid h-full place-items-center self-stretch py-2.5 text-xs font-bold text-white"
-                          style={{ backgroundColor: STAGES[r.stage_id]?.bg }}>
+                      </div>
+
+                      {/* Botón editar en Desktop */}
+                      <div className="hidden items-center justify-center py-2.5 md:flex">
+                        <button type="button" title="Editar este registro"
+                          onClick={() => setView({ mode: "form", editing: r })}
+                          className="rounded-lg p-1.5 text-text-muted transition hover:bg-bg-tertiary hover:text-accent-blue">
+                          <Pencil size={15} />
+                        </button>
+                      </div>
+
+                      {/* Datos de la reserva */}
+                      <div className="grid grid-cols-2 gap-3 md:contents">
+                        <div className="flex flex-col md:block md:py-2.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-text-muted md:hidden">Fecha</span>
+                          <span>{fmtDate(r.reservation_date)}</span>
+                        </div>
+                        <div className="flex flex-col md:block md:py-2.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-text-muted md:hidden">Hora</span>
+                          <span>{r.reservation_time}</span>
+                        </div>
+                        <div className="flex flex-col md:block md:py-2.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-text-muted md:hidden">Horas</span>
+                          <span>{r.number_hours}</span>
+                        </div>
+                        <div className="flex flex-col md:block md:py-2.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-text-muted md:hidden">Personas</span>
+                          <span>{r.people}</span>
+                        </div>
+                        <div className="col-span-2 flex flex-col md:col-span-1 md:block md:py-2.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-text-muted md:hidden">Teléfono</span>
+                          <span>{r.client_phone || "—"}</span>
+                        </div>
+                      </div>
+
+                      {/* Estado en Desktop */}
+                      <div className="hidden items-stretch justify-center md:flex">
+                        <span className={`grid w-full place-items-center py-2.5 text-xs font-bold ${STAGES[r.stage_id]?.classNames}`}>
                           {STAGES[r.stage_id]?.label}
                         </span>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

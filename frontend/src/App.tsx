@@ -25,7 +25,7 @@ function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
-      <div className="grid min-h-screen place-items-center text-text-muted">
+      <div className="grid min-h-[100dvh] place-items-center text-text-muted">
         Cargando…
       </div>
     );
