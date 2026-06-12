@@ -163,7 +163,8 @@ export default function Layout() {
   });
 
   return (
-    <div className="flex min-h-screen">
+    // h-dvh + overflow-hidden: el scroll vive en <main> y el menú queda fijo
+    <div className="flex h-dvh overflow-hidden">
       {/* Fondo oscuro tras el drawer en móvil */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 md:hidden"

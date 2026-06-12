@@ -108,9 +108,53 @@ body {
   animation: slideUp 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
-/* Sidebar celeste (distribución estilo Polaris) */
+/* Variante solo móvil: en md+ el panel aparece sin deslizarse desde abajo
+   (lo usa el detalle de ALERTAS/SOBREGIRO del Dashboard) */
+@media (max-width: 767px) {
+  .slide-up-mobile {
+    animation: slideUp 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+}
+
+/* Sidebar celeste (distribución estilo Polaris): gradiente vertical
+   pronunciado como el naranja→rojo de Polaris, en la identidad azul */
 .sidebar-polaris {
-  background: linear-gradient(180deg, hsl(197 90% 54%) 0%, hsl(205 88% 50%) 100%);
+  background: linear-gradient(
+    180deg,
+    hsl(195 95% 58%) 0%,
+    hsl(200 92% 50%) 40%,
+    hsl(208 88% 44%) 75%,
+    hsl(214 85% 38%) 100%
+  );
   border-right: none;
   box-shadow: 2px 0 12px hsl(202 80% 35% / 0.25);
+}
+
+/* Dashboard §1.5: barras que crecen desde 0 (Polaris growBarV) */
+@keyframes growBarV {
+  from {
+    height: 0%;
+  }
+}
+.grow-bar-v {
+  animation: growBarV 0.5s ease-out backwards;
+}
+
+/* Dashboard §1.5: punto de alerta con ping (paneles ALERTAS/SOBREGIRO) */
+@keyframes ping {
+  75%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.ping-dot {
+  animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Dashboard §1.5: texto vertical de las pestañas laterales */
+.vertical-text {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 0.15em;
 }
