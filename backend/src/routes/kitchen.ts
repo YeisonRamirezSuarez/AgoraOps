@@ -69,12 +69,18 @@ kitchenRouter.post("/status", async (req, res) => {
   }
 });
 
-/** Notificaciones (§1.6.7): campana + módulo de administración. */
+/** Notificaciones (§1.6.7): campana + grid réplica de Polaris
+ * (grid_notifications). "Registrado por"/"Actualizado por" muestran el
+ * login (Polaris: Cocinero123, Joan). Orden ascendente como Polaris;
+ * la grilla busca y pagina en el cliente. */
 kitchenRouter.get("/notifications", async (req, res) => {
   const onlyUnviewed = req.query.unviewed === "1";
   const rows = await query(
-    `SELECT n.*, oi.product_name, o.order_number, t.number AS table_number,
-            cu.full_name AS created_by_name, vu.full_name AS viewed_by_name
+    `SELECT n.id, n.status, n.is_viewed,
+            to_char(n.created_at AT TIME ZONE 'America/Bogota', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+            to_char(n.viewed_at AT TIME ZONE 'America/Bogota', 'YYYY-MM-DD HH24:MI:SS') AS viewed_at,
+            oi.product_name, o.order_number, t.number AS table_number,
+            cu.username AS created_by_name, vu.username AS viewed_by_name
      FROM notifications n
      LEFT JOIN order_items oi ON oi.id = n.order_item_id
      LEFT JOIN orders o ON o.id = oi.order_id
@@ -82,16 +88,17 @@ kitchenRouter.get("/notifications", async (req, res) => {
      LEFT JOIN users cu ON cu.id = n.created_by
      LEFT JOIN users vu ON vu.id = n.viewed_by
      WHERE n.tenant_id = $1 ${onlyUnviewed ? "AND n.is_viewed = false" : ""}
-     ORDER BY n.created_at DESC LIMIT 100`,
+     ORDER BY n.id`,
     [req.user!.tenantId],
   );
   res.json(rows);
 });
 
-/** Tocar la notificación la marca vista y registra quién la vio (§1.6.4). */
+/** Marca vista (desde la campana o el grid) y registra quién y cuándo
+ * la vio ("Actualizado"/"Actualizado por" de Polaris). */
 kitchenRouter.post("/notifications/:id/view", async (req, res) => {
   await query(
-    `UPDATE notifications SET is_viewed = true, viewed_by = $1
+    `UPDATE notifications SET is_viewed = true, viewed_by = $1, viewed_at = now()
      WHERE id = $2 AND tenant_id = $3`,
     [req.user!.id, req.params.id, req.user!.tenantId],
   );
