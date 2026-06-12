@@ -4,12 +4,19 @@
  * módulos principales con submenús desplegables, filtrados por rol
  * (manual §1.2): Mesero → Menú/QR/Mesas + Duplicado voucher; Cocina →
  * Monitor de Cocina; Mesero_cocina → mixto; Administrador → todo.
+ *
+ * Responsive: en tablets/desktop (md+) el sidebar es fijo y colapsable;
+ * en teléfonos se oculta como drawer (se abre con "Más") y la navegación
+ * principal del mesero vive en una barra inferior fija (Mesas, Menú,
+ * Cocina, Notificaciones). En la toma de pedidos (/mesas/:id) la barra
+ * se oculta para dejar lugar a la barra del carrito de la orden.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, UtensilsCrossed, Settings, Wallet, BarChart3,
   Package, Boxes, Shield, LogOut, ChevronDown, Menu, CircleUserRound,
+  LayoutGrid, ChefHat, Bell, X,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
@@ -114,6 +121,14 @@ const NAV: NavGroup[] = [
   },
 ];
 
+/** Accesos rápidos de la barra inferior móvil (lo más usado por el mesero). */
+const QUICK_NAV = [
+  { label: "Mesas", to: "/mesas", icon: LayoutGrid, roles: MESERO },
+  { label: "Menú", to: "/restaurante/menu", icon: UtensilsCrossed, roles: MESERO },
+  { label: "Cocina", to: "/cocina", icon: ChefHat, roles: COCINA },
+  { label: "Avisos", to: "/notificaciones", icon: Bell, roles: TODOS },
+];
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -121,8 +136,16 @@ export default function Layout() {
   const isAdmin = user?.roleType === "administrador" || user?.isSuperAdmin;
   const group = user?.groupName ?? "";
   const [collapsed, setCollapsed] = useState(false);
+  // Drawer móvil (el sidebar se desliza sobre el contenido en < md)
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const canSee = (roles?: string[]) => isAdmin || (roles ?? []).includes(group);
+
+  // En la toma de pedidos / pago la orden tiene su propia barra inferior
+  const hideMobileNav = /^\/mesas\/\d+/.test(location.pathname);
+
+  // Cerrar el drawer al navegar a otra página
+  useEffect(() => setMobileOpen(false), [location.pathname, location.search]);
 
   function isChildActive(c: NavChild): boolean {
     const [path, query] = c.to.split("?");
@@ -140,29 +163,40 @@ export default function Layout() {
   });
 
   return (
-    <div className="flex min-h-screen">
-      <aside className={`sidebar-polaris flex shrink-0 flex-col p-3 text-white transition-all duration-200 ${
-        collapsed ? "w-[76px]" : "w-72"
-      }`}>
+    // h-dvh + overflow-hidden: el scroll vive en <main> y el menú queda fijo
+    <div className="flex h-dvh overflow-hidden">
+      {/* Fondo oscuro tras el drawer en móvil */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={() => setMobileOpen(false)} />
+      )}
+
+      <aside className={`sidebar-polaris fixed inset-y-0 left-0 z-50 flex w-72 flex-col p-3 text-white transition-[transform,width] duration-200 md:static md:translate-x-0 md:shrink-0 ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      } ${collapsed ? "md:w-[76px]" : "md:w-72"}`}>
         {/* Cabecera: avatar + usuario + botón ☰ (Polaris) */}
-        <div className={`mb-4 flex items-center gap-3 px-1 pt-1 ${collapsed ? "flex-col" : ""}`}>
+        <div className={`mb-4 flex items-center gap-3 px-1 pt-1 ${collapsed ? "md:flex-col" : ""}`}>
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-[hsl(200_90%_47%)] shadow-md">
             <CircleUserRound size={30} strokeWidth={1.6} />
           </span>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-sm leading-tight text-white/80">
-                {user?.groupName ?? "Super Admin"}
-              </p>
-              <p className="truncate text-base font-bold leading-tight">
-                {user?.fullName}
-              </p>
-            </div>
-          )}
+          <div className={`min-w-0 flex-1 ${collapsed ? "md:hidden" : ""}`}>
+            <p className="text-sm leading-tight text-white/80">
+              {user?.groupName ?? "Super Admin"}
+            </p>
+            <p className="truncate text-base font-bold leading-tight">
+              {user?.fullName}
+            </p>
+          </div>
+          {/* Colapsar: solo tablet/desktop */}
           <button onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? "Mostrar menú" : "Ocultar menú"}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white transition hover:bg-white/20">
+            className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg text-white transition hover:bg-white/20 md:grid">
             <Menu size={24} strokeWidth={2.4} />
+          </button>
+          {/* Cerrar drawer: solo móvil */}
+          <button onClick={() => setMobileOpen(false)} aria-label="Cerrar menú"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white transition hover:bg-white/20 md:hidden">
+            <X size={24} strokeWidth={2.4} />
           </button>
         </div>
 
@@ -174,14 +208,14 @@ export default function Layout() {
                 <NavLink key={g.label} to={g.to!} title={g.label}
                   className={({ isActive }) =>
                     `flex items-center gap-3 whitespace-nowrap rounded-lg px-3 py-3 text-[16px] font-semibold transition ${
-                      collapsed ? "justify-center" : ""
+                      collapsed ? "md:justify-center" : ""
                     } ${
                       isActive
                         ? "bg-black/25 text-white"
                         : "text-white/90 hover:bg-white/15 hover:text-white"
                     }`}>
                   <g.icon size={21} className="shrink-0" />
-                  {!collapsed && g.label}
+                  <span className={collapsed ? "md:hidden" : ""}>{g.label}</span>
                 </NavLink>
               );
             }
@@ -201,7 +235,7 @@ export default function Layout() {
                     }
                   }}
                   className={`flex w-full items-center gap-2 rounded-lg px-3 py-3 text-[16px] font-semibold transition ${
-                    collapsed ? "justify-center" : "justify-between"
+                    collapsed ? "md:justify-center" : "justify-between"
                   } ${
                     groupActive
                       ? "bg-black/20 text-white"
@@ -209,14 +243,14 @@ export default function Layout() {
                   }`}>
                   <span className={`flex min-w-0 items-center gap-3 ${collapsed ? "" : "flex-1"}`}>
                     <g.icon size={21} className="shrink-0" />
-                    {!collapsed && (
-                      <span className="truncate whitespace-nowrap">{g.label}</span>
-                    )}
+                    <span className={`truncate whitespace-nowrap ${collapsed ? "md:hidden" : ""}`}>
+                      {g.label}
+                    </span>
                   </span>
-                  {!collapsed && (
-                    <ChevronDown size={15}
-                      className={`shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
-                  )}
+                  <ChevronDown size={15}
+                    className={`shrink-0 transition-transform ${expanded ? "rotate-180" : ""} ${
+                      collapsed ? "md:hidden" : ""
+                    }`} />
                 </button>
                 {expanded && (
                   <div className="mb-1 ml-5 space-y-0.5 border-l border-white/30 pl-3">
@@ -240,22 +274,44 @@ export default function Layout() {
         <div className="border-t border-white/25 pt-2">
           <button onClick={logout} title="Cerrar sesión"
             className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-[16px] font-semibold text-white/90 transition hover:bg-white/15 hover:text-white ${
-              collapsed ? "justify-center" : ""
+              collapsed ? "md:justify-center" : ""
             }`}>
             <LogOut size={21} className="shrink-0" />
-            {!collapsed && "Cerrar sesión"}
+            <span className={collapsed ? "md:hidden" : ""}>Cerrar sesión</span>
           </button>
-          {!collapsed && (
-            <p className="mt-1 px-3 pb-1 text-center text-sm font-extrabold tracking-wide text-white/90">
-              AgoraOps
-            </p>
-          )}
+          <p className={`mt-1 px-3 pb-1 text-center text-sm font-extrabold tracking-wide text-white/90 ${
+            collapsed ? "md:hidden" : ""
+          }`}>
+            AgoraOps
+          </p>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className={`flex-1 overflow-y-auto p-6 ${hideMobileNav ? "" : "pb-24 md:pb-6"}`}>
         <Outlet />
       </main>
+
+      {/* ══════════ Barra de navegación inferior (solo teléfonos) ══════════ */}
+      {!hideMobileNav && (
+        <nav className="glass fixed inset-x-0 bottom-0 z-40 flex rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] md:hidden">
+          {QUICK_NAV.filter((l) => canSee(l.roles)).map((l) => (
+            <NavLink key={l.to} to={l.to}
+              className={({ isActive }) =>
+                `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-semibold transition ${
+                  isActive ? "text-accent-blue" : "text-text-secondary"
+                }`}>
+              <l.icon size={22} />
+              {l.label}
+            </NavLink>
+          ))}
+          <button onClick={() => { setCollapsed(false); setMobileOpen(true); }}
+            aria-label="Abrir menú completo"
+            className="flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-semibold text-text-secondary transition">
+            <Menu size={22} />
+            Más
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

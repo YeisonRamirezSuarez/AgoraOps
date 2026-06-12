@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, AlertCircle, X, Inbox } from "lucide-react";
 
 /* ───────────────────────── Toasts ───────────────────────── */
@@ -205,9 +206,12 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  // Portal a <body>: los contenedores animados (fade-in-up) tienen transform
+  // y atrapan a los hijos `fixed`; desde body el overlay cubre toda la página
+  // (sidebar incluido, z por encima de su z-50).
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -227,7 +231,8 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

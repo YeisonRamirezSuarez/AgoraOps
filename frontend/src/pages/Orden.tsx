@@ -9,8 +9,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRightLeft, Ban, MessageSquare, Minus, Plus, Printer,
-  Receipt, ReceiptText, RotateCcw, Search, Send, Trash2, Undo2, Users, Wallet,
+  ArrowLeft, ArrowRightLeft, Ban, ChevronUp, MessageSquare, Minus, Plus,
+  Printer, Receipt, ReceiptText, RotateCcw, Search, Send, ShoppingCart,
+  Trash2, Undo2, Users, Wallet, X,
 } from "lucide-react";
 import { api, ApiError, subscribeEvents } from "../lib/api";
 import {
@@ -54,6 +55,8 @@ export default function Orden() {
   const [adding, setAdding] = useState<MenuProduct | null>(null);
   const [modal, setModal] = useState<"" | "comment" | "cancel" | "transfer" | "close" | "view" | "print">("");
   const [cancelItem, setCancelItem] = useState<OrderItem | null>(null);
+  // Bottom sheet del pedido en teléfonos (el panel derecho se oculta < lg)
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const load = useCallback(() => {
     api<Order>(`/api/orders/${orderId}`).then(setOrder).catch(() => navigate("/mesas"));
@@ -123,11 +126,99 @@ export default function Orden() {
 
   if (!order) return <p className="text-text-muted">Cargando orden…</p>;
 
+  const itemCount = activeItems.reduce((s, i) => s + i.quantity, 0);
+
+  /* Contenido del pedido, compartido entre el panel derecho (tablet/desktop)
+     y el bottom sheet (teléfonos). */
+  const panelBody = activeItems.length === 0 ? (
+    <div className="grid h-full min-h-48 place-items-center text-center text-text-muted">
+      <div>
+        <Receipt size={34} className="mx-auto mb-2 opacity-50" />
+        <p className="text-sm">Mesa vacía</p>
+      </div>
+    </div>
+  ) : (
+    <>
+      {newItems.length > 0 && (
+        <PanelSection label="Nuevo pedido">
+          {newItems.map((item) => (
+            <PanelItem key={item.id} item={item}
+              badge={<Badge color="amber">NUEVO</Badge>}
+              action={
+                <button onClick={() => removeItem(item)} aria-label="Quitar"
+                  className="rounded-lg p-1.5 text-text-muted transition hover:bg-accent-rose/15 hover:text-accent-rose">
+                  <Trash2 size={14} />
+                </button>
+              } />
+          ))}
+        </PanelSection>
+      )}
+      {confirmedItems.length > 0 && (
+        <PanelSection label="Pedido confirmado">
+          {confirmedItems.map((item) => (
+            <PanelItem key={item.id} item={item}
+              badge={
+                <Badge color={STATUS_COLOR[item.kitchen_status]}>
+                  {KITCHEN_STATUS_LABELS[item.kitchen_status].toUpperCase()}
+                  {item.is_paid ? " · PAGADO" : ""}
+                </Badge>
+              }
+              action={!item.is_paid ? (
+                <button onClick={() => { setCancelItem(item); setModal("cancel"); }}
+                  aria-label="Devolución"
+                  className="rounded-lg p-1.5 text-text-muted transition hover:bg-accent-rose/15 hover:text-accent-rose">
+                  <Ban size={14} />
+                </button>
+              ) : null} />
+          ))}
+        </PanelSection>
+      )}
+    </>
+  );
+
+  const panelActions = (
+    <div className="mt-4 space-y-2 border-t border-border-subtle pt-4">
+      <button type="button"
+        onClick={() => toast("error", "Compras Compartidas — pendiente de definición de requisitos.")}
+        className="flex w-full items-center justify-between rounded-xl border border-border-subtle px-4 py-2.5 text-sm transition hover:border-border-medium">
+        <span className="flex items-center gap-2 font-medium text-text-secondary">
+          <Users size={16} /> Compras Compartidas
+        </span>
+        <span className="relative h-5 w-9 shrink-0 rounded-full bg-bg-tertiary">
+          <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow" />
+        </span>
+      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="ghost" onClick={() => setModal("view")}>
+          <ReceiptText size={15} className="-mt-0.5 mr-1.5 inline" /> Ver Orden
+        </Button>
+        <Button onClick={confirmItems} disabled={newItems.length === 0}>
+          <Send size={15} className="-mt-0.5 mr-1.5 inline" /> Confirmar
+        </Button>
+      </div>
+      <div className="grid grid-cols-[auto_1fr] gap-2">
+        <Button variant="danger" onClick={() => setModal("close")} aria-label="Cerrar mesa">
+          <Undo2 size={15} />
+        </Button>
+        <Button variant="dark"
+          onClick={goToPay}
+          disabled={activeItems.length === 0 || newItems.length > 0}>
+          <Wallet size={15} className="-mt-0.5 mr-1.5 inline" /> Cobrar Mesa
+        </Button>
+      </div>
+      {newItems.length > 0 && (
+        <p className="text-center text-[11px] text-accent-amber">
+          Confirme los productos nuevos antes de cobrar
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="fade-in-up -m-6 flex min-h-[calc(100vh)] flex-col">
       {/* ══════════ Cabecera a lo ancho del contenido (estilo Polaris):
           título + mesero a la izquierda, TOTAL al extremo derecho ══════════ */}
-      <header className="glass flex items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-6 py-3">
+      <header className="glass flex items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate("/mesas")}
             className="rounded-lg p-2 text-text-muted transition hover:bg-bg-tertiary hover:text-text-primary">
@@ -147,8 +238,9 @@ export default function Orden() {
       </header>
 
       <div className="flex flex-1 flex-col lg:flex-row">
-      {/* ══════════ Columna izquierda: menú ══════════ */}
-      <div className="flex-1 p-6">
+      {/* ══════════ Columna izquierda: menú ══════════
+          En teléfonos deja espacio abajo para la barra de carrito fija. */}
+      <div className="flex-1 p-4 pb-28 sm:p-6 lg:pb-6">
         {/* Buscador + iconos de acción */}
         <div className="mb-4 flex items-center gap-2">
           <div className="relative flex-1">
@@ -165,7 +257,7 @@ export default function Orden() {
         <div className="mb-5 flex flex-wrap gap-2">
           {categories.map((c) => (
             <button key={c} onClick={() => setCategory(c)}
-              className={`rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wide transition ${
+              className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition sm:py-1.5 ${
                 c === category
                   ? "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_12px_hsl(199_89%_48%/0.25)]"
                   : "glass text-text-secondary hover:text-text-primary"
@@ -195,94 +287,60 @@ export default function Orden() {
         </div>
       </div>
 
-      {/* ══════════ Panel derecho: pedido ══════════ */}
-      <aside className="glass flex w-full flex-col border-l border-border-subtle p-5 lg:w-96">
-        <div className="flex-1 overflow-y-auto">
-          {activeItems.length === 0 ? (
-            <div className="grid h-full min-h-48 place-items-center text-center text-text-muted">
-              <div>
-                <Receipt size={34} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Mesa vacía</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              {newItems.length > 0 && (
-                <PanelSection label="Nuevo pedido">
-                  {newItems.map((item) => (
-                    <PanelItem key={item.id} item={item}
-                      badge={<Badge color="amber">NUEVO</Badge>}
-                      action={
-                        <button onClick={() => removeItem(item)} aria-label="Quitar"
-                          className="rounded-lg p-1.5 text-text-muted transition hover:bg-accent-rose/15 hover:text-accent-rose">
-                          <Trash2 size={14} />
-                        </button>
-                      } />
-                  ))}
-                </PanelSection>
-              )}
-              {confirmedItems.length > 0 && (
-                <PanelSection label="Pedido confirmado">
-                  {confirmedItems.map((item) => (
-                    <PanelItem key={item.id} item={item}
-                      badge={
-                        <Badge color={STATUS_COLOR[item.kitchen_status]}>
-                          {KITCHEN_STATUS_LABELS[item.kitchen_status].toUpperCase()}
-                          {item.is_paid ? " · PAGADO" : ""}
-                        </Badge>
-                      }
-                      action={!item.is_paid ? (
-                        <button onClick={() => { setCancelItem(item); setModal("cancel"); }}
-                          aria-label="Devolución"
-                          className="rounded-lg p-1.5 text-text-muted transition hover:bg-accent-rose/15 hover:text-accent-rose">
-                          <Ban size={14} />
-                        </button>
-                      ) : null} />
-                  ))}
-                </PanelSection>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Acciones inferiores estilo Polaris */}
-        <div className="mt-4 space-y-2 border-t border-border-subtle pt-4">
-          <button type="button"
-            onClick={() => toast("error", "Compras Compartidas — pendiente de definición de requisitos.")}
-            className="flex w-full items-center justify-between rounded-xl border border-border-subtle px-4 py-2.5 text-sm transition hover:border-border-medium">
-            <span className="flex items-center gap-2 font-medium text-text-secondary">
-              <Users size={16} /> Compras Compartidas
-            </span>
-            <span className="relative h-5 w-9 shrink-0 rounded-full bg-bg-tertiary">
-              <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow" />
-            </span>
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="ghost" onClick={() => setModal("view")}>
-              <ReceiptText size={15} className="-mt-0.5 mr-1.5 inline" /> Ver Orden
-            </Button>
-            <Button onClick={confirmItems} disabled={newItems.length === 0}>
-              <Send size={15} className="-mt-0.5 mr-1.5 inline" /> Confirmar
-            </Button>
-          </div>
-          <div className="grid grid-cols-[auto_1fr] gap-2">
-            <Button variant="danger" onClick={() => setModal("close")} aria-label="Cerrar mesa">
-              <Undo2 size={15} />
-            </Button>
-            <Button variant="dark"
-              onClick={goToPay}
-              disabled={activeItems.length === 0 || newItems.length > 0}>
-              <Wallet size={15} className="-mt-0.5 mr-1.5 inline" /> Cobrar Mesa
-            </Button>
-          </div>
-          {newItems.length > 0 && (
-            <p className="text-center text-[11px] text-accent-amber">
-              Confirme los productos nuevos antes de cobrar
-            </p>
-          )}
-        </div>
+      {/* ══════════ Panel derecho: pedido (tablet/desktop) ══════════ */}
+      <aside className="glass hidden w-96 flex-col border-l border-border-subtle p-5 lg:flex">
+        <div className="flex-1 overflow-y-auto">{panelBody}</div>
+        {panelActions}
       </aside>
       </div>
+
+      {/* ══════════ Barra de carrito fija (solo teléfonos) ══════════ */}
+      <div className="fixed inset-x-0 bottom-0 z-40 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] lg:hidden">
+        <button onClick={() => setSheetOpen(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-accent-blue to-accent-blue-hover px-5 py-3 text-white shadow-[0_4px_20px_hsl(199_89%_48%/0.45)] transition active:scale-[0.98]">
+          <span className="flex min-w-0 items-center gap-3">
+            <ShoppingCart size={22} className="shrink-0" />
+            <span className="min-w-0 text-left leading-tight">
+              <span className="block truncate text-xs font-semibold opacity-90">
+                {itemCount === 0
+                  ? "Mesa vacía"
+                  : `${itemCount} producto${itemCount === 1 ? "" : "s"}${
+                      newItems.length > 0
+                        ? ` · ${newItems.length} nuevo${newItems.length === 1 ? "" : "s"}`
+                        : ""
+                    }`}
+              </span>
+              <span className="block text-lg font-bold">{cop.format(total)}</span>
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1 font-semibold">
+            Ver orden <ChevronUp size={18} />
+          </span>
+        </button>
+      </div>
+
+      {/* ══════════ Bottom sheet del pedido (solo teléfonos) ══════════ */}
+      {sheetOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm lg:hidden"
+          onMouseDown={(e) => e.target === e.currentTarget && setSheetOpen(false)}>
+          <div className="slide-up glass flex max-h-[85vh] flex-col rounded-t-2xl border-b-0 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold">
+                  Pedido{tableNumber != null && ` — Mesa ${tableNumber}`}
+                </h2>
+                <p className="text-sm font-bold text-accent-cyan">{cop.format(total)}</p>
+              </div>
+              <button onClick={() => setSheetOpen(false)} aria-label="Cerrar pedido"
+                className="grid h-11 w-11 place-items-center rounded-xl text-text-muted transition hover:bg-bg-tertiary hover:text-text-primary">
+                <X size={22} />
+              </button>
+            </div>
+            <div className="min-h-24 flex-1 overflow-y-auto">{panelBody}</div>
+            {panelActions}
+          </div>
+        </div>
+      )}
 
       {/* ══════════ Modales ══════════ */}
       <AddProductModal product={adding} orderId={order.id} onClose={() => setAdding(null)} onAdded={load} />
@@ -400,16 +458,16 @@ function AddProductModal({ product, orderId, onClose, onAdded }: {
 
       <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-text-muted">Cantidad</p>
       <div className="glass mb-4 flex items-center justify-between rounded-xl p-2">
-        <button onClick={() => setQty((q) => Math.max(1, q - 1))}
-          className="grid h-10 w-10 place-items-center rounded-lg bg-bg-tertiary transition hover:text-accent-blue">
-          <Minus size={16} />
+        <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Restar"
+          className="grid h-12 w-12 place-items-center rounded-lg bg-bg-tertiary transition hover:text-accent-blue active:scale-95">
+          <Minus size={18} />
         </button>
         <input type="number" min={1} value={qty}
           onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
           className="w-20 border-b border-border-medium bg-transparent text-center text-xl font-bold outline-none" />
-        <button onClick={() => setQty((q) => q + 1)}
-          className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white">
-          <Plus size={16} />
+        <button onClick={() => setQty((q) => q + 1)} aria-label="Sumar"
+          className="grid h-12 w-12 place-items-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white active:scale-95">
+          <Plus size={18} />
         </button>
       </div>
 
@@ -431,10 +489,16 @@ function AddProductModal({ product, orderId, onClose, onAdded }: {
                   </span>
                   <div className="flex items-center gap-2">
                     <button onClick={() => setSelected({ ...selected, [t.topping_id]: Math.max(0, q - 1) })}
-                      className="grid h-7 w-7 place-items-center rounded-lg bg-bg-tertiary">−</button>
-                    <span className="w-5 text-center text-sm font-bold">{q}</span>
+                      aria-label={`Quitar ${t.name}`}
+                      className="grid h-11 w-11 place-items-center rounded-lg bg-bg-tertiary transition active:scale-95">
+                      <Minus size={16} />
+                    </button>
+                    <span className="w-6 text-center text-base font-bold">{q}</span>
                     <button onClick={() => setSelected({ ...selected, [t.topping_id]: Math.min(t.max_allowed, q + 1) })}
-                      className="grid h-7 w-7 place-items-center rounded-lg bg-accent-orange/20 text-accent-orange">+</button>
+                      aria-label={`Agregar ${t.name}`}
+                      className="grid h-11 w-11 place-items-center rounded-lg bg-accent-orange/20 text-accent-orange transition active:scale-95">
+                      <Plus size={16} />
+                    </button>
                   </div>
                 </div>
               );

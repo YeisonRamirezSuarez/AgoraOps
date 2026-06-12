@@ -374,9 +374,10 @@ ordersRouter.post("/:id/pay", async (req, res) => {
     return;
   }
   try {
-    await query("SELECT pay_order($1, $2, $3, $4, $5)", [
+    await query("SELECT pay_order($1, $2, $3, $4, $5, $6)", [
       req.params.id, parsed.data.clientId, parsed.data.tip,
       JSON.stringify(parsed.data.payments), parsed.data.sessionId ?? null,
+      req.user!.id,
     ]);
     const payments = await query(
       `SELECT op.amount, op.tip_included, op.change_given, op.voucher_number,
