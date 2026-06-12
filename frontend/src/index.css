@@ -87,6 +87,27 @@ body {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* Scroll horizontal sin barra visible (tabs de salas en móvil) */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Bottom sheet móvil (panel del pedido en la toma de órdenes) */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.slide-up {
+  animation: slideUp 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
 /* Sidebar celeste (distribución estilo Polaris) */
 .sidebar-polaris {
   background: linear-gradient(180deg, hsl(197 90% 54%) 0%, hsl(205 88% 50%) 100%);

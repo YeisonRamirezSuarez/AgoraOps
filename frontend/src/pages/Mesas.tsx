@@ -115,11 +115,12 @@ export default function Mesas() {
         </div>
       )}
 
-      {/* Tabs por sala, estilo Polaris (icono + nombre, subrayado activo) */}
-      <div className="mb-5 flex flex-wrap gap-1 border-b border-border-subtle">
+      {/* Tabs por sala, estilo Polaris (icono + nombre, subrayado activo).
+          En teléfonos: una sola fila con scroll horizontal suave. */}
+      <div className="scrollbar-none -mx-6 mb-5 flex gap-1 overflow-x-auto border-b border-border-subtle px-6 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
         {rooms.map(([id, name]) => (
           <button key={id} onClick={() => setActiveRoom(id)}
-            className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm transition ${
+            className={`-mb-px flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm transition ${
               id === room
                 ? "border-accent-blue font-medium text-accent-blue"
                 : "border-transparent text-text-secondary hover:text-text-primary"
@@ -131,7 +132,7 @@ export default function Mesas() {
 
       {/* Tarjetas de ocupación y libres */}
       <div className="mb-6 flex flex-wrap gap-3">
-        <div className="glass flex items-center gap-3 rounded-2xl px-5 py-3.5">
+        <div className="glass flex flex-1 items-center gap-3 rounded-2xl px-4 py-3 sm:flex-none sm:px-5 sm:py-3.5">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-emerald/15 text-accent-emerald">
             <Users size={18} />
           </span>
@@ -142,7 +143,7 @@ export default function Mesas() {
             <p className="text-xl font-bold">{occupancy}%</p>
           </div>
         </div>
-        <div className="glass flex items-center gap-3 rounded-2xl px-5 py-3.5">
+        <div className="glass flex flex-1 items-center gap-3 rounded-2xl px-4 py-3 sm:flex-none sm:px-5 sm:py-3.5">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-blue/15 text-accent-blue">
             <Coffee size={18} />
           </span>
@@ -155,8 +156,8 @@ export default function Mesas() {
         </div>
       </div>
 
-      {/* Cards de mesa */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
+      {/* Cards de mesa — 2 columnas compactas en teléfonos */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] sm:gap-4">
         {cells.map((cell) => {
           const isOccupied = !!cell.order_id;
           const blocked = !isOccupied && cashOpen === false;
@@ -167,7 +168,7 @@ export default function Mesas() {
 
           return (
             <button key={cell.table_id} onClick={() => openTable(cell)}
-              className={`glass rounded-2xl border p-5 text-left transition ${
+              className={`glass rounded-2xl border p-3.5 text-left transition sm:p-5 ${
                 blocked
                   ? "cursor-not-allowed opacity-55"
                   : "hover:-translate-y-0.5 hover:shadow-xl"
@@ -178,8 +179,8 @@ export default function Mesas() {
                     : "border-accent-emerald/60"
                   : "border-border-subtle"
               }`}>
-              <div className="mb-3 flex items-start justify-between">
-                <h3 className="text-lg font-bold">Mesa {cell.number}</h3>
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                <h3 className="text-xl font-bold">Mesa {cell.number}</h3>
                 {isOccupied
                   ? <Badge color={tone === "danger" ? "rose" : tone === "warning" ? "amber" : "emerald"}>Ocupada</Badge>
                   : <Badge color="gray">Libre</Badge>}
@@ -191,13 +192,13 @@ export default function Mesas() {
 
               {isOccupied && time && style ? (
                 <>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className={`flex items-center gap-1.5 font-semibold tabular-nums ${style.text}`}>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-sm">
+                    <span className={`flex items-center gap-1.5 text-base font-bold tabular-nums sm:text-sm sm:font-semibold ${style.text}`}>
                       <Clock size={14} /> {time.label}
                       {tone === "danger" && <AlertTriangle size={14} />}
                     </span>
-                    <span className="flex items-center gap-1.5 text-text-secondary">
-                      <UserRound size={14} /> {cell.attended_by ?? "—"}
+                    <span className="flex max-w-full items-center gap-1.5 truncate text-text-secondary">
+                      <UserRound size={14} className="shrink-0" /> {cell.attended_by ?? "—"}
                     </span>
                   </div>
 
@@ -207,11 +208,11 @@ export default function Mesas() {
                       style={{ width: `${progress}%` }} />
                   </div>
 
-                  <div className="flex items-end justify-between border-t border-border-subtle pt-3">
+                  <div className="flex flex-wrap items-end justify-between gap-x-2 border-t border-border-subtle pt-3">
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
                       Cuenta
                     </span>
-                    <span className="text-xl font-bold">
+                    <span className="text-lg font-bold sm:text-xl">
                       {cop.format(Number(cell.total))}
                     </span>
                   </div>
