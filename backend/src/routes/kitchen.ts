@@ -59,6 +59,18 @@ kitchenRouter.post("/status", async (req, res) => {
     res.status(400).json({ error: "Estado o productos inválidos" });
     return;
   }
+  // Aislamiento multi-tenant: set_kitchen_status no filtra por tenant, así
+  // que se verifica que todos los ítems sean de órdenes del tenant del JWT.
+  const owned = await query<{ id: number }>(
+    `SELECT oi.id FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     WHERE oi.id = ANY($1) AND o.tenant_id = $2`,
+    [parsed.data.itemIds, req.user!.tenantId],
+  );
+  if (owned.length !== parsed.data.itemIds.length) {
+    res.status(404).json({ error: "Productos no encontrados" });
+    return;
+  }
   try {
     await query("SELECT set_kitchen_status($1, $2, $3)", [
       parsed.data.itemIds, parsed.data.status, req.user!.id,

@@ -15,6 +15,53 @@ import { requireAuth } from "../middleware/auth.js";
 export const ordersRouter = Router();
 ordersRouter.use(requireAuth);
 
+/**
+ * Aislamiento multi-tenant (decisión 00018): toda ruta con :id opera sobre
+ * una orden; aquí se verifica una sola vez que esa orden pertenezca al
+ * tenant del JWT antes de ejecutar cualquier handler o función SQL
+ * (confirm/pay/transfer/close…), que reciben el id sin re-validar tenant.
+ * Express ejecuta este callback solo en rutas que declaran :id.
+ */
+ordersRouter.param("id", (req, res, next, id) => {
+  queryOne("SELECT id FROM orders WHERE id = $1 AND tenant_id = $2", [
+    id,
+    req.user!.tenantId,
+  ])
+    .then((order) => {
+      if (!order) {
+        res.status(404).json({ error: "Orden no encontrada" });
+        return;
+      }
+      next();
+    })
+    .catch(next);
+});
+
+type ToppingSel = { toppingId: number; quantity: number };
+
+/** Suma price×qty de los toppings (compartido por agregar/editar ítem). */
+async function toppingsTotalOf(toppings: ToppingSel[]): Promise<number> {
+  if (toppings.length === 0) return 0;
+  const row = await queryOne<{ total: string }>(
+    `SELECT COALESCE(SUM(t.price * x.qty), 0) AS total
+     FROM unnest($1::int[], $2::int[]) AS x(id, qty)
+     JOIN toppings t ON t.id = x.id`,
+    [toppings.map((t) => t.toppingId), toppings.map((t) => t.quantity)],
+  );
+  return Number(row?.total ?? 0);
+}
+
+/** Inserta los toppings de un ítem copiando nombre/precio actuales. */
+async function insertItemToppings(itemId: number, toppings: ToppingSel[]): Promise<void> {
+  for (const t of toppings) {
+    await query(
+      `INSERT INTO order_item_toppings (order_item_id, topping_id, topping_name, topping_price, quantity)
+       SELECT $1, id, name, price, $3 FROM toppings WHERE id = $2`,
+      [itemId, t.toppingId, t.quantity],
+    );
+  }
+}
+
 /** Opciones para la pantalla de pago (§1.6.3): métodos activos, bancos,
  * denominaciones (atajos de efectivo §1.7.8), propina configurada y
  * cajas abiertas (Caja de Pago del resumen de transacción). */
@@ -323,18 +370,7 @@ ordersRouter.post("/:id/items", async (req, res) => {
     new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14) +
     Math.floor(Math.random() * 90000 + 10000);
 
-  const toppingsTotal = toppings.length
-    ? Number(
-        (await queryOne<{ total: string }>(
-          `SELECT COALESCE(SUM(t.price * x.qty), 0) AS total
-           FROM unnest($1::int[], $2::int[]) AS x(id, qty)
-           JOIN toppings t ON t.id = x.id`,
-          [toppings.map((t) => t.toppingId), toppings.map((t) => t.quantity)],
-        ))?.total ?? 0,
-      )
-    : 0;
-
-  const subtotal = (unitPrice + toppingsTotal) * quantity;
+  const subtotal = (unitPrice + (await toppingsTotalOf(toppings))) * quantity;
 
   try {
     const item = await queryOne<{ id: number }>(
@@ -348,13 +384,7 @@ ordersRouter.post("/:id/items", async (req, res) => {
         product.printer_id, customerId ?? null,
       ],
     );
-    for (const t of toppings) {
-      await query(
-        `INSERT INTO order_item_toppings (order_item_id, topping_id, topping_name, topping_price, quantity)
-         SELECT $1, id, name, price, $3 FROM toppings WHERE id = $2`,
-        [item!.id, t.toppingId, t.quantity],
-      );
-    }
+    await insertItemToppings(item!.id, toppings);
     res.status(201).json(item);
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });
@@ -407,17 +437,7 @@ ordersRouter.put("/:id/items/:itemId", async (req, res) => {
     return;
   }
 
-  const toppingsTotal = toppings.length
-    ? Number(
-        (await queryOne<{ total: string }>(
-          `SELECT COALESCE(SUM(t.price * x.qty), 0) AS total
-           FROM unnest($1::int[], $2::int[]) AS x(id, qty)
-           JOIN toppings t ON t.id = x.id`,
-          [toppings.map((t) => t.toppingId), toppings.map((t) => t.quantity)],
-        ))?.total ?? 0,
-      )
-    : 0;
-  const subtotal = (Number(item.unit_price) + toppingsTotal) * quantity;
+  const subtotal = (Number(item.unit_price) + (await toppingsTotalOf(toppings))) * quantity;
 
   try {
     await query(
@@ -426,13 +446,7 @@ ordersRouter.put("/:id/items/:itemId", async (req, res) => {
       [quantity, notes ?? null, subtotal, customerId ?? null, item.id],
     );
     await query("DELETE FROM order_item_toppings WHERE order_item_id = $1", [item.id]);
-    for (const t of toppings) {
-      await query(
-        `INSERT INTO order_item_toppings (order_item_id, topping_id, topping_name, topping_price, quantity)
-         SELECT $1, id, name, price, $3 FROM toppings WHERE id = $2`,
-        [item.id, t.toppingId, t.quantity],
-      );
-    }
+    await insertItemToppings(item.id, toppings);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });

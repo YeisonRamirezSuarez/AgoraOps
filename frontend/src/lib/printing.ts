@@ -12,6 +12,24 @@ import { api } from "./api";
 
 const BRIDGE = "http://localhost:8080";
 
+/** Escapa texto para insertarlo en el HTML de una tirilla (voucher/reporte). */
+export function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+}
+
+/**
+ * Abre una ventana e imprime el HTML de una tirilla (voucher de pago, cierre
+ * de caja, reporte). El HTML debe traer su propio onload=window.print().
+ * Devuelve false si el navegador bloqueó la ventana emergente.
+ */
+export function printReceipt(html: string, height = 640): boolean {
+  const w = window.open("", "_blank", `width=420,height=${height}`);
+  if (!w) return false;
+  w.document.write(html);
+  w.document.close();
+  return true;
+}
+
 export interface Printer {
   id: number;
   name: string;

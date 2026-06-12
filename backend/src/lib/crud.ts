@@ -111,6 +111,14 @@ export function crudRouter(opts: CrudOptions): Router {
   return router;
 }
 
+/**
+ * Error de negocio con el código P0001 (igual que un RAISE EXCEPTION de los
+ * triggers): dbErrorMessage() lo traduce a su mensaje tal cual para la UI.
+ */
+export function bizError(message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code: "P0001", message });
+}
+
 /** Traduce errores de Postgres (triggers/constraints) a mensajes de UI. */
 export function dbErrorMessage(err: unknown): string {
   const e = err as { code?: string; message?: string; constraint?: string };

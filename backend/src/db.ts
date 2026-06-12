@@ -4,11 +4,7 @@ import { config } from "./config.js";
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
   max: 10,
-  // Supabase (hosted) exige SSL; localhost no lo soporta
-  ssl: config.databaseUrl.includes("localhost") ||
-    config.databaseUrl.includes("127.0.0.1")
-    ? undefined
-    : { rejectUnauthorized: false },
+  ssl: config.dbSsl, // centralizado en config (localhost sin SSL, hosted con SSL)
 });
 
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(

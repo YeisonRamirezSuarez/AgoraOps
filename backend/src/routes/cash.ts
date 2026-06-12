@@ -14,6 +14,24 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js";
 export const cashRouter = Router();
 cashRouter.use(requireAuth, requireAdmin);
 
+/** Aislamiento multi-tenant: toda ruta con :id opera sobre una sesión de
+ * caja; se valida una vez que pertenezca al tenant del JWT antes de
+ * ejecutar el handler o las funciones SQL (close_cash_session…). */
+cashRouter.param("id", (req, res, next, id) => {
+  queryOne("SELECT id FROM cash_sessions WHERE id = $1 AND tenant_id = $2", [
+    id,
+    req.user!.tenantId,
+  ])
+    .then((session) => {
+      if (!session) {
+        res.status(404).json({ error: "Sesión no encontrada" });
+        return;
+      }
+      next();
+    })
+    .catch(next);
+});
+
 /** Cajas con su sesión abierta (si existe) + total en efectivo actual
  * (columna "Total" de la lista Apertura/Cierre estilo Polaris). */
 cashRouter.get("/sessions", async (req, res) => {
@@ -21,18 +39,7 @@ cashRouter.get("/sessions", async (req, res) => {
     `SELECT cr.id AS cash_register_id, cr.name, cr.status AS register_status,
             cs.id AS session_id, cs.status, cs.opening_amount, cs.opened_at,
             cs.user_name, cs.responsible_name, cs.opening_note,
-            CASE WHEN cs.id IS NULL THEN NULL ELSE
-              cs.opening_amount
-              + COALESCE((SELECT SUM(op.amount - op.change_given)
-                  FROM order_payments op
-                  JOIN orders o ON o.id = op.order_id
-                  JOIN payment_methods pm ON pm.id = op.payment_method_id
-                  WHERE o.cash_session_id = cs.id AND pm.name = 'EFECTIVO'), 0)
-              + COALESCE((SELECT SUM(amount) FROM cash_transactions
-                  WHERE cash_session_id = cs.id AND type = 'ENTRADA'), 0)
-              - COALESCE((SELECT SUM(amount) FROM cash_transactions
-                  WHERE cash_session_id = cs.id AND type = 'SALIDA'), 0)
-            END AS current_total
+            cash_session_balance(cs.id) AS current_total
      FROM cash_registers cr
      LEFT JOIN cash_sessions cs
        ON cs.cash_register_id = cr.id AND cs.status = 'abierta'
@@ -199,17 +206,8 @@ cashRouter.post("/sessions/:id/transactions", async (req, res) => {
   // §1.8.3: la salida no puede superar el disponible en caja
   if (parsed.data.type === "SALIDA") {
     const available = await queryOne<{ total: string }>(
-      `SELECT cs.opening_amount
-         + COALESCE((SELECT SUM(op.amount - op.change_given) FROM order_payments op
-             JOIN orders o ON o.id = op.order_id
-             JOIN payment_methods pm ON pm.id = op.payment_method_id
-             WHERE o.cash_session_id = cs.id AND pm.name = 'EFECTIVO'), 0)
-         + COALESCE((SELECT SUM(amount) FROM cash_transactions
-             WHERE cash_session_id = cs.id AND type = 'ENTRADA'), 0)
-         - COALESCE((SELECT SUM(amount) FROM cash_transactions
-             WHERE cash_session_id = cs.id AND type = 'SALIDA'), 0) AS total
-       FROM cash_sessions cs WHERE cs.id = $1 AND cs.tenant_id = $2`,
-      [req.params.id, req.user!.tenantId],
+      "SELECT cash_session_balance($1) AS total",
+      [req.params.id],
     );
     if (Number(available?.total ?? 0) < parsed.data.amount) {
       res.status(409).json({

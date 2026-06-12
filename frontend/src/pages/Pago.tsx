@@ -17,6 +17,7 @@ import {
   LayoutGrid, Plus, Trash2, WalletCards, X, Zap,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { escHtml, printReceipt } from "../lib/printing";
 import { Badge, Button, cop, Field, Input, MoneyInput, Select, useToast } from "../components/ui";
 import type { Order, OrderItem } from "./Orden";
 
@@ -228,7 +229,7 @@ export default function Pago() {
   function printVoucher() {
     if (!voucher || !order) return;
     const s = options?.settings;
-    const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const esc = escHtml;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Voucher ${esc(order.order_number)}</title>
 <style>
   body{font-family:'Courier New',monospace;font-size:12px;width:300px;margin:0 auto;padding:12px;color:#000}
@@ -270,13 +271,10 @@ ${voucher.payments.map((p) =>
 </table>
 <p>¡Gracias por su compra!</p>
 </body></html>`;
-    const w = window.open("", "_blank", "width=420,height=620");
-    if (!w) {
+    if (!printReceipt(html, 620)) {
       toast("error", "No fue posible imprimir el voucher.");
       return;
     }
-    w.document.write(html);
-    w.document.close();
     toast("success", "El voucher fue impreso.");
     finish();
   }

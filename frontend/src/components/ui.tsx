@@ -358,6 +358,15 @@ export const cop = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 0,
 });
 
+/** Fecha y hora local (es-CO) de un valor de BD; `fallback` si viene vacío. */
+export function fmtDateTime(
+  value: string | null | undefined,
+  fallback = "—",
+): string {
+  if (!value) return fallback;
+  return new Date(value).toLocaleString("es-CO");
+}
+
 /* ─────────────── Paginación estilo Polaris (todas las tablas) ───────────────
    "Ver 10/20/50" · « ‹ pág › » · [x a y de z] */
 

@@ -12,6 +12,29 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const productsRouter = Router();
 
+// requireAuth a nivel de router: garantiza req.user en el param callback de
+// abajo (los param callbacks corren antes que el middleware por-ruta). Todas
+// las rutas de productos requieren autenticación; requireAdmin sigue por ruta.
+productsRouter.use(requireAuth);
+
+/** Aislamiento multi-tenant para los subrecursos (/:id/recipe, /toppings,
+ * /variants, /combo): valida que el producto sea del tenant del JWT. No
+ * afecta al crudRouter de abajo, cuyo :id es interno y ya filtra tenant. */
+productsRouter.param("id", (req, res, next, id) => {
+  queryOne("SELECT id FROM products WHERE id = $1 AND tenant_id = $2", [
+    id,
+    req.user!.tenantId,
+  ])
+    .then((product) => {
+      if (!product) {
+        res.status(404).json({ error: "Producto no encontrado" });
+        return;
+      }
+      next();
+    })
+    .catch(next);
+});
+
 // CRUD base (eliminar con ventas asociadas lo bloquea la FK de order_items)
 productsRouter.use("/", crudRouter({
   table: "products",
