@@ -6,7 +6,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, QrCode, Search, UtensilsCrossed } from "lucide-react";
 import { api } from "../lib/api";
-import { EnConstruccion } from "../components/EnConstruccion";
 import { cop, Input, PageHeader } from "../components/ui";
 
 interface MenuProduct {
@@ -148,15 +147,4 @@ export function QrPage() {
 
 /* Clientes vive en pages/Clientes.tsx (réplica Polaris) */
 
-/* ───────── Gestión de domicilios (Fase 4) ───────── */
-export function DomiciliosPage() {
-  return (
-    <div className="fade-in-up">
-      <PageHeader title="Gestión de domicilios" />
-      <EnConstruccion
-        titulo="Gestión de domicilios"
-        nota="Funcionalidad del PHP legacy (registrarVentaDomi, empresadomi, valorDomi) planificada en Fase 4 del plan de implementación."
-      />
-    </div>
-  );
-}
+/* Gestión de domicilios vive en pages/Domicilios.tsx (réplica Polaris) */

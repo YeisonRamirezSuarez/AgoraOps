@@ -18,7 +18,7 @@ import { CheckCircle2, AlertCircle, X, Inbox } from "lucide-react";
 
 interface Toast {
   id: number;
-  type: "success" | "error";
+  type: "success" | "error" | "warning";
   message: string;
 }
 
@@ -43,11 +43,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={`glass fade-in-up flex max-w-sm items-start gap-2 rounded-xl px-4 py-3 text-sm shadow-2xl ${
-              t.type === "success" ? "border-accent-emerald/40" : "border-accent-rose/40"
+              t.type === "success" ? "border-accent-emerald/40"
+                : t.type === "warning" ? "border-accent-amber/40" : "border-accent-rose/40"
             }`}
           >
             {t.type === "success" ? (
               <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-accent-emerald" />
+            ) : t.type === "warning" ? (
+              <AlertCircle size={17} className="mt-0.5 shrink-0 text-accent-amber" />
             ) : (
               <AlertCircle size={17} className="mt-0.5 shrink-0 text-accent-rose" />
             )}
