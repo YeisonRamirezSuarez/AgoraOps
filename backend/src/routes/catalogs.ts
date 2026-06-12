@@ -78,16 +78,6 @@ catalogsRouter.use("/groups", crudRouter({
   orderBy: "name",
 }));
 
-// §1.6.5 Reservaciones (validaciones de fecha en BD/route propia futura)
-catalogsRouter.use("/reservations", crudRouter({
-  table: "reservations",
-  columns: [
-    "client_id", "contact_name", "contact_phone", "stage_id", "date",
-    "room_id", "table_id", "decoration_type", "cost", "observations",
-  ],
-  orderBy: "date DESC",
-}));
-
 // §1.11.1 Productos del inventario
 catalogsRouter.use("/inventory-products", crudRouter({
   table: "inventory_products",

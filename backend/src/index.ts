@@ -19,6 +19,7 @@ import { eventsRouter } from "./routes/events.js";
 import { settingsRouter } from "./routes/settings.js";
 import { inventoryRouter } from "./routes/inventory.js";
 import { reportsRouter } from "./routes/reports.js";
+import { reservationsRouter } from "./routes/reservations.js";
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use("/api/events", eventsRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/inventory", inventoryRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/reservations", reservationsRouter);
 
 // Manejador de errores no capturados
 app.use(

@@ -145,46 +145,7 @@ export function QrPage() {
   );
 }
 
-/* ───────── Reservaciones (§1.6.5) ───────── */
-export function ReservacionesPage() {
-  const [rooms, setRooms] = useState<{ id: number; name: string }[]>([]);
-  const [clients, setClients] = useState<{ id: number; name: string }[]>([]);
-  useEffect(() => {
-    api<{ id: number; name: string }[]>("/api/catalogs/rooms").then(setRooms).catch(() => {});
-    api<{ id: number; name: string }[]>("/api/catalogs/clients").then(setClients).catch(() => {});
-  }, []);
-  return (
-    <div className="fade-in-up">
-      <PageHeader title="Reservaciones" />
-      <CrudPage title="reservación" endpoint="/api/catalogs/reservations"
-        fields={[
-          {
-            name: "client_id", label: "Cliente", type: "select", required: true,
-            options: clients.map((c) => ({ value: c.id, label: c.name })),
-          },
-          {
-            name: "stage_id", label: "Etapa", type: "select", required: true,
-            options: [
-              { value: 1, label: "Reservado" },
-              { value: 2, label: "Confirmado" },
-              { value: 3, label: "Cancelado" },
-            ],
-          },
-          {
-            name: "date", label: "Fecha y hora", type: "datetime-local", required: true,
-            render: (r) => new Date(String(r.date)).toLocaleString("es-CO"),
-          },
-          {
-            name: "room_id", label: "Sala", type: "select",
-            options: rooms.map((r) => ({ value: r.id, label: r.name })),
-          },
-          { name: "decoration_type", label: "Decoración", inTable: false },
-          { name: "cost", label: "Costo", type: "money", inTable: false },
-          { name: "observations", label: "Observaciones", inTable: false },
-        ]} />
-    </div>
-  );
-}
+/* Reservaciones vive en pages/Reservaciones.tsx (réplica Polaris) */
 
 /* ───────── Clientes (§1.6.6) ───────── */
 export function ClientesPage() {
