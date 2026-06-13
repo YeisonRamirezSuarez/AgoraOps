@@ -171,6 +171,12 @@ body {
   box-shadow: 2px 0 12px hsl(230 30% 8% / 0.4);
 }
 
+@media (min-width: 768px) {
+  .sidebar-super {
+    box-shadow: none;
+  }
+}
+
 /* Dashboard §1.5: barras que crecen desde 0 (Polaris growBarV) */
 @keyframes growBarV {
   from {
