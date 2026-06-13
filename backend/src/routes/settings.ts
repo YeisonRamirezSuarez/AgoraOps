@@ -141,3 +141,54 @@ settingsRouter.put("/payment-methods/:id", async (req, res) => {
     res.status(400).json({ error: dbErrorMessage(err) });
   }
 });
+
+/**
+ * Prioridad del menú (§1.7.6): categorías favoritas visibles por día de
+ * semana (0=domingo … 6=sábado). Al servir el menú (GET /products/menu/*),
+ * si un día tiene favoritas configuradas solo se muestran esas categorías;
+ * si no tiene ninguna, se muestran todas. Origen Polaris: prioridad_menu.
+ */
+settingsRouter.get("/menu-priority", async (req, res) => {
+  const rows = await query<{ weekday: number; category_id: number }>(
+    `SELECT weekday, category_id FROM menu_priority
+     WHERE tenant_id = $1 ORDER BY weekday, sort_order`,
+    [req.user!.tenantId],
+  );
+  // Mapa día → category_ids en orden de prioridad (los días sin favoritas se omiten)
+  const byDay: Record<number, number[]> = {};
+  for (const r of rows) (byDay[r.weekday] ??= []).push(r.category_id);
+  res.json(byDay);
+});
+
+settingsRouter.put("/menu-priority", async (req, res) => {
+  const schema = z.object({
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1),
+    categoryIds: z.array(z.number().int()),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos inválidos" });
+    return;
+  }
+  const { weekdays, categoryIds } = parsed.data;
+  try {
+    // Reemplaza las favoritas de cada día seleccionado (sort_order = posición).
+    // Lista vacía = el día vuelve a mostrar todas las categorías.
+    await query(
+      "DELETE FROM menu_priority WHERE tenant_id = $1 AND weekday = ANY($2::int[])",
+      [req.user!.tenantId, weekdays],
+    );
+    for (const weekday of weekdays) {
+      for (let i = 0; i < categoryIds.length; i++) {
+        await query(
+          `INSERT INTO menu_priority (tenant_id, weekday, category_id, sort_order)
+           VALUES ($1, $2, $3, $4)`,
+          [req.user!.tenantId, weekday, categoryIds[i], i],
+        );
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});

@@ -66,6 +66,11 @@ productsRouter.get("/menu/list", requireAuth, async (req, res) => {
                     WHERE bs.tenant_id = $1 AND bs.allow_overdraft)
          OR EXISTS (SELECT 1 FROM inventory_products ip
                     WHERE ip.product_id = p.id AND ip.type = 'consumible' AND ip.stock > 0)
+         -- Inventariable pero aún sin consumible vinculado: nada que descontar,
+         -- así que sigue visible (evita que un producto recién creado, que por
+         -- defecto nace is_inventariable=true, desaparezca del menú sin stock).
+         OR NOT EXISTS (SELECT 1 FROM inventory_products ip
+                    WHERE ip.product_id = p.id AND ip.type = 'consumible')
        )
        -- Si hay categorías favoritas para hoy, solo esas (§1.7.6)
        AND (
