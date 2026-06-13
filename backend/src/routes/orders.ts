@@ -302,11 +302,13 @@ ordersRouter.get("/:id", async (req, res) => {
   // domiciliario asignados).
   const order = await queryOne(
     `SELECT o.*,
+            r.name AS room_name,
             cl.name AS client_name, cl.last_name AS client_last_name,
             cl.phone AS client_phone, cl.address AS client_address,
             NULLIF(TRIM(COALESCE(dp.first_name, '') || ' ' || COALESCE(dp.last_name, '')), '')
               AS delivery_personnel_name
        FROM orders o
+       LEFT JOIN rooms r ON r.id = o.room_id
        LEFT JOIN clients cl ON cl.id = o.client_id
        LEFT JOIN delivery_personnel dp ON dp.id = o.delivery_personnel_id
       WHERE o.id = $1 AND o.tenant_id = $2`,
@@ -605,6 +607,7 @@ ordersRouter.post("/:id/pay", async (req, res) => {
   const schema = z.object({
     clientId: z.number(),
     tip: z.number().min(0).default(0),
+    deliveryFee: z.number().min(0).default(0),
     sessionId: z.number().nullish(),
     payments: z.array(z.object({
       method_id: z.number(),
@@ -621,10 +624,10 @@ ordersRouter.post("/:id/pay", async (req, res) => {
     return;
   }
   try {
-    await query("SELECT pay_order($1, $2, $3, $4, $5, $6)", [
+    await query("SELECT pay_order($1, $2, $3, $4, $5, $6, $7)", [
       req.params.id, parsed.data.clientId, parsed.data.tip,
       JSON.stringify(parsed.data.payments), parsed.data.sessionId ?? null,
-      req.user!.id,
+      req.user!.id, parsed.data.deliveryFee,
     ]);
     const payments = await query(
       `SELECT op.amount, op.tip_included, op.change_given, op.voucher_number,

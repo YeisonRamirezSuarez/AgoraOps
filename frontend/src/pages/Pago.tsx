@@ -37,7 +37,7 @@ interface PaidVoucher {
   payments: { method: string; amount: string; voucher_number: string; change_given: string }[];
   items: OrderItem[];
   clientName: string;
-  subtotal: number; tip: number; total: number;
+  subtotal: number; tip: number; delivery: number; total: number;
   received: number; change: number;
 }
 
@@ -53,6 +53,11 @@ export default function Pago() {
 
   // Toggles
   const [tipOn, setTipOn] = useState(false);
+  // Propina REAL que dio el cliente (vacío = usar la sugerida del %). El cajero
+  // puede ingresar más o menos que el % configurado.
+  const [tipAmount, setTipAmount] = useState("");
+  // Valor del domicilio (solo órdenes de la sala DOMICILIO; opcional, default 0)
+  const [deliveryFee, setDeliveryFee] = useState("");
   const [split, setSplit] = useState(false);
   const [byProduct, setByProduct] = useState(false);
   const [direct, setDirect] = useState(false);
@@ -85,6 +90,12 @@ export default function Pago() {
       }).catch(() => {});
   }, [orderId, navigate]);
 
+  // Preseleccionar el cliente que la orden ya tiene asignado (p. ej. domicilio
+  // con cliente elegido en la pantalla de la orden); el cajero puede cambiarlo.
+  useEffect(() => {
+    if (order?.client_id != null) setClientId(String(order.client_id));
+  }, [order?.client_id]);
+
   const items: OrderItem[] = useMemo(
     () => (order?.items ?? []).filter((i) => i.kitchen_status !== "cancelado" && !i.is_paid),
     [order],
@@ -94,8 +105,16 @@ export default function Pago() {
   const amountDue = payingItems.reduce((s, i) => s + Number(i.subtotal), 0);
   const tipPct = Number(options?.settings?.tip_percentage ?? 0);
   const tipEnabled = !!options?.settings?.tip_enabled;
-  const tip = tipOn && tipEnabled ? Math.round((amountDue * tipPct) / 100) : 0;
-  const toPay = amountDue + tip;
+  // Propina sugerida = % configurado sobre el subtotal. La REAL puede diferir:
+  // si el cajero no escribe nada se usa la sugerida; si escribe, manda la suya.
+  const suggestedTip = Math.round((amountDue * tipPct) / 100);
+  const tip = tipOn && tipEnabled
+    ? (tipAmount === "" ? suggestedTip : Math.max(0, Math.round(Number(tipAmount) || 0)))
+    : 0;
+  // Domicilio: solo aplica a órdenes de la sala DOMICILIO; suma aparte al total.
+  const isDomicilio = (order?.room_name ?? "").toUpperCase() === "DOMICILIO";
+  const delivery = isDomicilio ? Math.max(0, Math.round(Number(deliveryFee) || 0)) : 0;
+  const toPay = amountDue + tip + delivery;
   const entered = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
   
   // Si no hay monto ingresado y no está dividido, asumimos PAGO EXACTO
@@ -199,7 +218,7 @@ export default function Pago() {
       const r = await api<{ payments: PaidVoucher["payments"] }>(`/api/orders/${orderId}/pay`, {
         method: "POST",
         body: {
-          clientId: finalClientId, tip, payments: body,
+          clientId: finalClientId, tip, deliveryFee: delivery, payments: body,
           sessionId: sessionId ? Number(sessionId) : null,
         },
       });
@@ -209,7 +228,7 @@ export default function Pago() {
         payments: r.payments,
         items: payingItems,
         clientName,
-        subtotal: amountDue, tip, total: toPay,
+        subtotal: amountDue, tip, delivery, total: toPay,
         received: entered, change,
       });
     } catch (e) {
@@ -246,6 +265,8 @@ export default function Pago() {
       { t: "divider" },
       { t: "kv", k: "Subtotal", v: cop.format(voucher.subtotal) },
       { t: "kv", k: "Propina", v: cop.format(voucher.tip) },
+      ...(voucher.delivery > 0
+        ? [{ t: "kv", k: "Domicilio", v: cop.format(voucher.delivery) } as DocLine] : []),
       { t: "kv", k: "TOTAL", v: cop.format(voucher.total) },
       { t: "kv", k: "Recibido", v: cop.format(voucher.received) },
       { t: "kv", k: "Cambio", v: cop.format(voucher.change) },
@@ -307,7 +328,8 @@ export default function Pago() {
               <div className="grid gap-2 sm:grid-cols-2">
                 {tipEnabled && (
                   <Toggle icon={<HandCoins size={15} />} label={`Propina (${tipPct}%)`}
-                    checked={tipOn} onChange={setTipOn} />
+                    checked={tipOn}
+                    onChange={(v) => { setTipOn(v); if (!v) setTipAmount(""); }} />
                 )}
                 <Toggle icon={<LayoutGrid size={15} />} label="Combinado" checked={split}
                   onChange={(v) => {
@@ -322,6 +344,45 @@ export default function Pago() {
                   onChange={() => toast("error", "Venta a crédito — pendiente de definición de requisitos.")} />
                 <Toggle icon={<Zap size={15} />} label="Pago directo" checked={direct} onChange={setDirect} />
               </div>
+
+              {/* Propina REAL que dio el cliente (editable; default = sugerida %) */}
+              {tipOn && tipEnabled && (
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-accent-amber/40 bg-accent-amber/10 px-4 py-3">
+                  <div className="text-sm">
+                    <p className="font-medium text-accent-orange">Propina recibida</p>
+                    <p className="text-[11px] text-text-muted">
+                      Sugerida {tipPct}%: {cop.format(suggestedTip)} · puede ser más o menos
+                    </p>
+                  </div>
+                  <MoneyInput
+                    value={tipAmount === "" ? suggestedTip : tipAmount}
+                    onValueChange={setTipAmount}
+                    decimals={0}
+                    className="!w-32 text-right font-bold"
+                    title="Propina que entregó el cliente"
+                  />
+                </div>
+              )}
+
+              {/* Valor del domicilio (solo órdenes de la sala DOMICILIO) */}
+              {isDomicilio && (
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-accent-cyan/40 bg-accent-cyan/10 px-4 py-3">
+                  <div className="text-sm">
+                    <p className="font-medium text-accent-cyan">Valor del domicilio</p>
+                    <p className="text-[11px] text-text-muted">
+                      Se suma al total · no cuenta como venta
+                    </p>
+                  </div>
+                  <MoneyInput
+                    value={deliveryFee}
+                    onValueChange={setDeliveryFee}
+                    decimals={0}
+                    placeholder={cop.format(0)}
+                    className="!w-32 text-right font-bold"
+                    title="Valor del domicilio cobrado al cliente"
+                  />
+                </div>
+              )}
 
               {/* Selección de productos (Pago por producto §1.6.3) */}
               {byProduct && (
@@ -585,10 +646,34 @@ export default function Pago() {
                 <span className="text-text-secondary">Subtotal</span>
                 <span className="font-medium">{cop.format(amountDue)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-text-secondary">Propina</span>
-                <span className="font-medium">{cop.format(tip)}</span>
-              </div>
+              {tipOn && tipEnabled ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-text-secondary">
+                    Propina
+                    <span className="ml-1 text-[11px] text-text-muted">
+                      (sugerida {tipPct}%: {cop.format(suggestedTip)})
+                    </span>
+                  </span>
+                  <MoneyInput
+                    value={tipAmount === "" ? suggestedTip : tipAmount}
+                    onValueChange={setTipAmount}
+                    decimals={0}
+                    className="!h-8 !w-28 text-right font-medium"
+                    title="Propina que dio el cliente (puede ser más o menos que la sugerida)"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-text-secondary">Propina</span>
+                  <span className="font-medium">{cop.format(tip)}</span>
+                </div>
+              )}
+              {isDomicilio && (
+                <div className="flex items-center justify-between">
+                  <span className="text-text-secondary">Domicilio</span>
+                  <span className="font-medium">{cop.format(delivery)}</span>
+                </div>
+              )}
             </div>
 
             <div className="mt-3 flex items-center justify-between border-t border-border-medium pt-3">

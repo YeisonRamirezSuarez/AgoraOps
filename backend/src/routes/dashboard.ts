@@ -7,7 +7,8 @@
  * alertas de stock bajo / sobregiro.
  *
  * Semántica (verificada contra el QA de Polaris):
- *  - "Facturado" y "Ventas" excluyen propina (total - tip de órdenes pagadas).
+ *  - "Facturado" y "Ventas" excluyen propina Y domicilio
+ *    (total - tip - delivery_fee de órdenes pagadas).
  *  - Ranking por Pedidos = pedidos gestionados (toda orden no cancelada).
  *  - Ranking por Pagos y tendencia "amount" = cobros netos (amount - cambio),
  *    propina incluida, atribuidos al usuario que procesó el pago.
@@ -194,7 +195,7 @@ async function rankingPayments(tenant: string | null, r: Range): Promise<Ranking
 async function periodKPIs(tenant: string | null, r: Range) {
   const orders = await queryOne<{ total_orders: number; total_sales: string }>(
     `SELECT COUNT(*)::int AS total_orders,
-            COALESCE(SUM(o.total - o.tip), 0) AS total_sales
+            COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) AS total_sales
      FROM orders o
      WHERE o.tenant_id = $1 AND o.status = 'pagada'
        AND ${dateRange("o.created_at", 2, 3)}`,
@@ -368,7 +369,7 @@ dashboardRouter.get("/", async (req, res) => {
 
   async function billedIn(r: Range): Promise<number> {
     const row = await queryOne<{ billed: string }>(
-      `SELECT COALESCE(SUM(o.total - o.tip), 0) AS billed
+      `SELECT COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) AS billed
        FROM orders o
        WHERE o.tenant_id = $1 AND o.status = 'pagada'
          AND ${dateRange("o.created_at", 2, 3)}`,
@@ -379,7 +380,7 @@ dashboardRouter.get("/", async (req, res) => {
 
   async function waitersIn(r: Range) {
     const rows = await query<{ name: string; value: string }>(
-      `SELECT u.username AS name, COALESCE(SUM(o.total - o.tip), 0) AS value
+      `SELECT u.username AS name, COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) AS value
        FROM orders o
        JOIN users u ON u.id = o.user_id
        WHERE o.tenant_id = $1 AND o.status = 'pagada'
