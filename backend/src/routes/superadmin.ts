@@ -283,8 +283,10 @@ superadminRouter.post("/tenants", async (req, res) => {
     await client.query(
       `INSERT INTO payment_methods (tenant_id, name, is_active, is_legacy) VALUES
          ($1, 'EFECTIVO', true, false),
+         ($1, 'TARJETA', true, false),
          ($1, 'TRANSFERENCIA', true, false),
-         ($1, 'CUENTA POR COBRAR', true, false)`,
+         ($1, 'VENTA A CREDITO', true, false),
+         ($1, 'COMBINADO', true, false)`,
       [tenant.id],
     );
 

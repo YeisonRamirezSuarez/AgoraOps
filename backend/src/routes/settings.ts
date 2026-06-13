@@ -105,10 +105,61 @@ settingsRouter.get("/payment-methods", async (req, res) => {
      FROM payment_methods pm
      LEFT JOIN payment_method_banks pmb ON pmb.payment_method_id = pm.id
      WHERE pm.tenant_id = $1
-     GROUP BY pm.id ORDER BY pm.is_legacy, pm.name`,
+       -- Catálogo fijo de Polaris (5 métodos). Métodos legacy de tenants
+       -- antiguos (NEQUI/DAVIPLATA/RAPPI) quedan fuera de la configuración
+       -- pero se conservan en BD para el historial de ventas.
+       AND pm.name IN ('EFECTIVO', 'TARJETA', 'TRANSFERENCIA',
+                       'VENTA A CREDITO', 'COMBINADO')
+     GROUP BY pm.id
+     ORDER BY CASE pm.name
+       WHEN 'EFECTIVO' THEN 1 WHEN 'TARJETA' THEN 2 WHEN 'TRANSFERENCIA' THEN 3
+       WHEN 'VENTA A CREDITO' THEN 4 WHEN 'COMBINADO' THEN 5 ELSE 6 END,
+       pm.is_legacy, pm.name`,
     [req.user!.tenantId],
   );
   res.json(rows);
+});
+
+/** Guardado masivo (un solo "Guardar" como Polaris): estado de cada método
+ * + bancos asociados (solo aplica a TRANSFERENCIA). */
+settingsRouter.put("/payment-methods", async (req, res) => {
+  const schema = z.object({
+    methods: z.array(z.object({
+      id: z.number(),
+      is_active: z.boolean(),
+      bank_ids: z.array(z.number()).optional(),
+    })).min(1),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos inválidos" });
+    return;
+  }
+  try {
+    for (const m of parsed.data.methods) {
+      const row = await queryOne(
+        `UPDATE payment_methods SET is_active = $3
+         WHERE id = $1 AND tenant_id = $2 RETURNING id`,
+        [m.id, req.user!.tenantId, m.is_active],
+      );
+      if (!row) continue; // ignora ids ajenos al tenant
+      if (m.bank_ids) {
+        await query(
+          "DELETE FROM payment_method_banks WHERE payment_method_id = $1",
+          [m.id],
+        );
+        for (const bankId of m.bank_ids) {
+          await query(
+            "INSERT INTO payment_method_banks (payment_method_id, bank_id) VALUES ($1, $2)",
+            [m.id, bankId],
+          );
+        }
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
 });
 
 settingsRouter.put("/payment-methods/:id", async (req, res) => {

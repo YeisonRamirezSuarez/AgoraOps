@@ -404,7 +404,20 @@ ${voucher.payments.map((p) =>
               {!split && (
                 <Field label="Método de pago">
                   <Select value={singleLine?.method_id ?? ""}
-                    onChange={(e) => setLine(0, { method_id: e.target.value, bank_id: "" })}>
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      // COMBINADO no es un medio de pago real: al elegirlo se
+                      // activa el modo combinado (pago con varios métodos).
+                      if (methodName(id) === "COMBINADO") {
+                        setSplit(true);
+                        setLines([
+                          { method_id: "", bank_id: "", amount: "" },
+                          { method_id: "", bank_id: "", amount: "" },
+                        ]);
+                        return;
+                      }
+                      setLine(0, { method_id: id, bank_id: "" });
+                    }}>
                     {options.methods.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
@@ -478,7 +491,7 @@ ${voucher.payments.map((p) =>
                         <Select value={l.method_id}
                           onChange={(e) => setLine(idx, { method_id: e.target.value, bank_id: "" })}>
                           <option value="">— Método de pago —</option>
-                          {options.methods.map((m) => (
+                          {options.methods.filter((m) => m.name !== "COMBINADO").map((m) => (
                             <option key={m.id} value={m.id}>{m.name}</option>
                           ))}
                         </Select>

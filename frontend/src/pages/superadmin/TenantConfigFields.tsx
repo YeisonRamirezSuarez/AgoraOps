@@ -6,7 +6,7 @@
  */
 import { useRef } from "react";
 import { ImagePlus, Trash2, Check } from "lucide-react";
-import { FormRow, Input, Select, useToast } from "../../components/ui";
+import { FormRow, Field, Input, Select, useToast } from "../../components/ui";
 import { PALETTES, getPalette } from "../../shared/constants/palettes";
 
 export interface TenantConfig {
@@ -236,23 +236,23 @@ export function TenantFields({ value, onChange, slugLocked = false }: {
 
       <SectionTitle>Moneda</SectionTitle>
       <div className="grid gap-3 sm:grid-cols-3">
-        <FormRow label="Código (ISO)" required>
+        <Field label="Código (ISO)" required>
           <Input value={value.currencyCode} maxLength={8}
             onChange={(e) => set({ currencyCode: e.target.value.toUpperCase() })}
             placeholder="COP" />
-        </FormRow>
-        <FormRow label="Símbolo" required>
+        </Field>
+        <Field label="Símbolo" required>
           <Input value={value.currencySymbol} maxLength={4}
             onChange={(e) => set({ currencySymbol: e.target.value })}
             placeholder="$" />
-        </FormRow>
-        <FormRow label="Decimales" required>
+        </Field>
+        <Field label="Decimales" required>
           <Select value={String(value.currencyDecimals)}
             onChange={(e) => set({ currencyDecimals: Number(e.target.value) as 0 | 2 })}>
             <option value="0">0 (1.234)</option>
             <option value="2">2 (1.234,56)</option>
           </Select>
-        </FormRow>
+        </Field>
       </div>
 
       <SectionTitle>Datos del negocio</SectionTitle>

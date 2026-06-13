@@ -124,15 +124,17 @@ export function FormRow({ label, required, children }: {
 
 export function Field({
   label,
+  required,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-text-secondary">
-        {label}
+        {label} {required && <span className="text-accent-rose">*</span>}
       </span>
       {children}
     </label>
