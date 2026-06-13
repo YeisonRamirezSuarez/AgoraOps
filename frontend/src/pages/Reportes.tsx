@@ -4,14 +4,15 @@
  * canceladas (admin) y Duplicado voucher (por número de orden).
  */
 import { useCallback, useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Eraser, FileSpreadsheet, FileText, Receipt, Search } from "lucide-react";
+import * as XLSX from "xlsx";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
 import {
-  Badge, Button, cop, Field, fmtDateTime, Input, Modal, PageHeader, Table,
-  usePagination, useToast,
+  Badge, Button, cop, Field, fmtDateTime, Input, Modal, PageHeader, Select,
+  Table, usePagination, useToast,
 } from "../components/ui";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -122,41 +123,315 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-/* ───────── Reporte general (§1.9.1) ───────── */
+/* ───────── Reporte general (§1.9.1 — réplica Polaris) ─────────
+   Filtros: Atendió (usuario que abrió), Vendió (cajero que cobró), Fecha de
+   fin (paid_at), Método de pago y Caja. Grid de 13 columnas con Subtotal
+   BRUTO (incluye cancelados) y Total neto; Exportar XLS; drill-down a
+   "Registro de la orden" y al Recibo. */
+
+const pct = (v: unknown) => `${Number(v)}%`; // 10.00 → "10%"
+const estadoLabel = (s: unknown) =>
+  s === "pagada" ? "FINALIZADO" : s === "abierta" ? "EN CURSO" : "CANCELADA";
+
+interface GeneralFilters {
+  users: { id: string; username: string; full_name: string }[];
+  paymentMethods: { id: number; name: string }[];
+  cashSessions: { id: number; label: string }[];
+}
+
 function GeneralTab() {
-  const [from, setFrom] = useState(today());
-  const [to, setTo] = useState(today());
+  const toast = useToast();
+  const [opts, setOpts] = useState<GeneralFilters>({
+    users: [], paymentMethods: [], cashSessions: [],
+  });
+  // Filtros (vacío = "Seleccione una opción", igual que Polaris)
+  const [atendio, setAtendio] = useState("");
+  const [vendio, setVendio] = useState("");
+  const [fechaFin, setFechaFin] = useState("");
+  const [payMethod, setPayMethod] = useState("");
+  const [cashSession, setCashSession] = useState("");
+
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [receiptId, setReceiptId] = useState<number | null>(null);
+
+  useEffect(() => {
+    api<GeneralFilters>("/api/reports/general/filters").then(setOpts).catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
-    api<Record<string, unknown>[]>(`/api/reports/general?from=${from}&to=${to}`)
+    const qs = new URLSearchParams();
+    if (atendio) qs.set("atendio", atendio);
+    if (vendio) qs.set("vendio", vendio);
+    if (fechaFin) qs.set("fechaFin", fechaFin);
+    if (payMethod) qs.set("payMethod", payMethod);
+    if (cashSession) qs.set("cashSession", cashSession);
+    api<Record<string, unknown>[]>(`/api/reports/general?${qs.toString()}`)
       .then(setRows).catch(() => {});
-  }, [from, to]);
+  }, [atendio, vendio, fechaFin, payMethod, cashSession]);
   useEffect(load, [load]);
+
+  function clearFilters() {
+    setAtendio(""); setVendio(""); setFechaFin(""); setPayMethod(""); setCashSession("");
+  }
+
+  function exportXls() {
+    if (rows.length === 0) { toast("error", "No hay registros para exportar."); return; }
+    const header = [
+      "Número de orden", "Fecha de inicio", "Fecha de fin", "Estado de la orden",
+      "Atendió", "Vendió", "Método de pago", "Subtotal", "Propina",
+      "Porcentaje de la propina", "Descuento", "Domicilio", "Total",
+    ];
+    const data = rows.map((r) => [
+      String(r.order_number), fmtDateTime(r.opened_at as string),
+      fmtDateTime(r.paid_at as string), estadoLabel(r.status),
+      String(r.atendio ?? ""), String(r.vendio ?? ""), String(r.pay_method ?? ""),
+      Number(r.subtotal), Number(r.tip), pct(r.tip_percentage),
+      Number(r.discount), Number(r.delivery_fee), Number(r.total),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Reporte general");
+    XLSX.writeFile(wb, "Reporte_general.xlsx");
+  }
+
   const { slice, bar } = usePagination(rows);
 
   return (
     <>
-      <DateFilters from={from} to={to} setFrom={setFrom} setTo={setTo} onSearch={load} />
-      <Table headers={["Orden", "Fecha", "Mesa", "Estado", "Atendió", "Total"]} empty={rows.length === 0}>
+      {/* Filtros — réplica del formulario de búsqueda de Polaris */}
+      <div className="glass mb-4 rounded-2xl p-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Atendió">
+            <Select value={atendio} onChange={(e) => setAtendio(e.target.value)}>
+              <option value="">Seleccione una opción</option>
+              {opts.users.map((u) => (
+                <option key={u.id} value={u.id}>{u.username}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Vendió">
+            <Select value={vendio} onChange={(e) => setVendio(e.target.value)}>
+              <option value="">Seleccione una opción</option>
+              {opts.users.map((u) => (
+                <option key={u.id} value={u.id}>{u.username}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Fecha de fin">
+            <Input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} />
+          </Field>
+          <Field label="Método de pago">
+            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+              <option value="">Seleccione una opción</option>
+              {opts.paymentMethods.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Caja">
+            <Select value={cashSession} onChange={(e) => setCashSession(e.target.value)}>
+              <option value="">Seleccione una opción</option>
+              {opts.cashSessions.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button onClick={load}><Search size={14} className="-mt-0.5 mr-1 inline" /> Búsqueda</Button>
+          <Button variant="ghost" onClick={clearFilters}>
+            <Eraser size={14} className="-mt-0.5 mr-1 inline" /> Limpiar Filtros
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm text-text-secondary">{rows.length} órdenes</p>
+        <Button variant="ghost" onClick={exportXls}>
+          <FileSpreadsheet size={14} className="-mt-0.5 mr-1 inline" /> Exportar
+        </Button>
+      </div>
+
+      <Table
+        headers={[
+          "", "Número de orden", "Fecha de inicio", "Fecha de fin", "Estado de la orden",
+          "Atendió", "Vendió", "Método de pago", "Subtotal", "Propina",
+          "Porcentaje de la propina", "Descuento", "Domicilio", "Total",
+        ]}
+        empty={rows.length === 0}
+      >
         {slice.map((r) => (
           <tr key={String(r.id)}>
-            <td className="px-4 py-2">#{String(r.order_number)}</td>
-            <td className="px-4 py-2 text-xs">{fmtDateTime(r.created_at as string)}</td>
-            <td className="px-4 py-2">{r.table_number ? `Mesa ${r.table_number}` : "—"}</td>
+            <td className="whitespace-nowrap px-4 py-2">
+              <button title="Registro de la orden" className="mr-2 text-text-muted hover:text-brand-500"
+                onClick={() => setDetailId(Number(r.id))}>
+                <FileText size={16} className="inline" />
+              </button>
+              <button title="Recibo" className="text-text-muted hover:text-brand-500"
+                onClick={() => setReceiptId(Number(r.id))}>
+                <Receipt size={16} className="inline" />
+              </button>
+            </td>
+            <td className="px-4 py-2">{String(r.order_number)}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(r.opened_at as string)}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(r.paid_at as string)}</td>
             <td className="px-4 py-2">
               <Badge color={r.status === "pagada" ? "emerald" : "amber"}>
-                {r.status === "pagada" ? "Finalizada" : "En curso"}
+                {estadoLabel(r.status)}
               </Badge>
             </td>
-            <td className="px-4 py-2">{String(r.attended_by ?? "—")}</td>
+            <td className="px-4 py-2">{String(r.atendio ?? "—")}</td>
+            <td className="px-4 py-2">{String(r.vendio ?? "—")}</td>
+            <td className="px-4 py-2">{String(r.pay_method ?? "—")}</td>
+            <td className="px-4 py-2">{cop.format(Number(r.subtotal))}</td>
+            <td className="px-4 py-2">{cop.format(Number(r.tip))}</td>
+            <td className="px-4 py-2">{pct(r.tip_percentage)}</td>
+            <td className="px-4 py-2">{cop.format(Number(r.discount))}</td>
+            <td className="px-4 py-2">{cop.format(Number(r.delivery_fee))}</td>
             <td className="px-4 py-2 font-medium">{cop.format(Number(r.total))}</td>
           </tr>
         ))}
       </Table>
 
       {bar}
+
+      <OrderDetailModal id={detailId} onClose={() => setDetailId(null)} />
+      <ReceiptModal id={receiptId} onClose={() => setReceiptId(null)} />
     </>
+  );
+}
+
+/* ── Registro de la orden (drill-down): todos los ítems incl. cancelados ── */
+function OrderDetailModal({ id, onClose }: { id: number | null; onClose: () => void }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+
+  useEffect(() => {
+    if (id == null) { setRows([]); return; }
+    api<Record<string, unknown>[]>(`/api/reports/general/${id}/items`)
+      .then(setRows).catch(() => {});
+  }, [id]);
+
+  function exportXls() {
+    if (rows.length === 0) return;
+    const header = [
+      "Número de orden", "Número de mesa", "Tipo de producto", "Nombre del producto",
+      "Cantidad del producto", "Cantidad del topping", "Promoción aplicada",
+      "Monto de descuento", "Descripción", "Estado del pago", "Total",
+    ];
+    const data = rows.map((r) => [
+      String(r.order_number), r.table_number ? String(r.table_number) : "",
+      String(r.product_type), String(r.product_name), Number(r.quantity),
+      Number(r.topping_qty), "", 0, String(r.description ?? ""),
+      String(r.pay_state), Number(r.total),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Registro de la orden");
+    XLSX.writeFile(wb, `Registro_orden_${rows[0]?.order_number ?? id}.xlsx`);
+  }
+
+  return (
+    <Modal open={id != null} title={`Registro de la orden ${rows[0]?.order_number ?? ""}`}
+      onClose={onClose} wide>
+      <div className="mb-3 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={exportXls}>
+          <FileSpreadsheet size={14} className="-mt-0.5 mr-1 inline" /> Exportar
+        </Button>
+      </div>
+      <Table
+        headers={[
+          "N° orden", "N° mesa", "Tipo de producto", "Nombre del producto",
+          "Cant. producto", "Cant. topping", "Promoción aplicada",
+          "Monto de descuento", "Descripción", "Estado del pago", "Total",
+        ]}
+        empty={rows.length === 0}
+      >
+        {rows.map((r, i) => (
+          <tr key={i}>
+            <td className="px-3 py-2">{String(r.order_number)}</td>
+            <td className="px-3 py-2">{r.table_number ? String(r.table_number) : "—"}</td>
+            <td className="px-3 py-2">{String(r.product_type)}</td>
+            <td className="px-3 py-2">{String(r.product_name)}</td>
+            <td className="px-3 py-2">{Number(r.quantity)}</td>
+            <td className="px-3 py-2">{Number(r.topping_qty)}</td>
+            <td className="px-3 py-2">—</td>
+            <td className="px-3 py-2">{cop.format(0)}</td>
+            <td className="max-w-44 truncate px-3 py-2">{String(r.description ?? "—")}</td>
+            <td className="px-3 py-2">
+              <Badge color={r.pay_state === "CANCELADO" ? "rose"
+                : r.pay_state === "PAGO" ? "emerald" : "amber"}>
+                {String(r.pay_state)}
+              </Badge>
+            </td>
+            <td className="px-3 py-2 font-medium">{cop.format(Number(r.total))}</td>
+          </tr>
+        ))}
+      </Table>
+    </Modal>
+  );
+}
+
+/* ── Recibo (drill-down): voucher con totales (réplica blank_receipt_report) ── */
+function ReceiptModal({ id, onClose }: { id: number | null; onClose: () => void }) {
+  const [r, setR] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    if (id == null) { setR(null); return; }
+    api<Record<string, unknown>>(`/api/reports/general/${id}/receipt`)
+      .then(setR).catch(() => {});
+  }, [id]);
+
+  const items = (r?.items ?? []) as { name: string; qty: number; unit: number; subtotal: number }[];
+
+  return (
+    <Modal open={id != null} title="Recibo" onClose={onClose}>
+      {r && (
+        <div className="font-mono text-sm">
+          <div className="text-center">
+            <p className="text-base font-bold">{String(r.business_name ?? "")}</p>
+            {r.address ? <p className="text-xs">{String(r.address)}</p> : null}
+            {r.tax_id ? <p className="text-xs">NIT - {String(r.tax_id)}</p> : null}
+          </div>
+          <div className="my-2 border-y border-dashed border-border-medium py-2 text-xs">
+            <p className="font-bold">Pedido: {String(r.order_number)}
+              {r.table_number ? ` / Mesa: ${r.table_number}` : ""}</p>
+            <p>Inicio: {fmtDateTime(r.opened_at as string)}</p>
+            <p>Fin: {fmtDateTime(r.paid_at as string)}</p>
+          </div>
+          <div className="text-xs">
+            <p>Mesero: {String(r.attended_name ?? "—")}</p>
+            <p>Cajero: {String(r.cashier_name ?? "—")}</p>
+            {r.cash_register_name ? <p>Caja: {String(r.cash_register_name)}</p> : null}
+            <p>Método de Pago: {String(r.pay_method ?? "—")}</p>
+          </div>
+          <div className="my-2 border-y border-dashed border-border-medium py-2">
+            <p className="mb-1 text-center font-bold">RECIBO</p>
+            {items.map((it, i) => (
+              <div key={i} className="flex justify-between">
+                <span>{it.name} ×{it.qty}</span>
+                <span>{cop.format(Number(it.subtotal))}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-0.5 text-xs">
+            <div className="flex justify-between"><span>SUBTOTAL</span><span>{cop.format(Number(r.subtotal))}</span></div>
+            {/* Línea del % = propina SUGERIDA (config); PROPINA = la real que dio el cliente */}
+            <div className="flex justify-between"><span>{pct(r.tip_percentage)}</span><span>{cop.format(Math.round(Number(r.subtotal) * Number(r.tip_percentage) / 100))}</span></div>
+            <div className="flex justify-between"><span>PROPINA</span><span>{cop.format(Number(r.tip))}</span></div>
+            {Number(r.discount) > 0 && (
+              <div className="flex justify-between"><span>DESCUENTO</span><span>-{cop.format(Number(r.discount))}</span></div>
+            )}
+            {Number(r.delivery_fee) > 0 && (
+              <div className="flex justify-between"><span>DOMICILIO</span><span>{cop.format(Number(r.delivery_fee))}</span></div>
+            )}
+            <div className="flex justify-between pt-1 text-sm font-bold"><span>TOTAL</span><span>{cop.format(Number(r.total))}</span></div>
+          </div>
+          <Button className="mt-4 w-full" variant="ghost" onClick={() => window.print()}>Imprimir</Button>
+        </div>
+      )}
+    </Modal>
   );
 }
 

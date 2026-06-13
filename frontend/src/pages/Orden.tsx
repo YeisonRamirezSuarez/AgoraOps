@@ -60,7 +60,8 @@ export interface OrderItem {
 }
 export interface Order {
   id: number; order_number: string; comment: string | null; status: string;
-  table_id: number; room_id: number | null; attended_by: string | null;
+  table_id: number; room_id: number | null; room_name: string | null;
+  attended_by: string | null; delivery_fee?: number | string | null;
   client_id: number | null; delivery_personnel_id: number | null;
   // Datos de domicilio embebidos (widgets del ticket, Polaris)
   client_name: string | null; client_last_name: string | null;
