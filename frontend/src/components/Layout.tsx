@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { configureCurrency } from "./ui";
 import { applyPalette } from "../shared/constants/palettes";
 import { APP_VERSION } from "../shared/constants/app";
 import NotificationBell from "./NotificationBell";
@@ -162,12 +163,15 @@ export default function Layout() {
     // Última paleta conocida de inmediato (evita el destello celeste
     // mientras responde el API); luego la autoritativa del servidor.
     applyPalette(localStorage.getItem("agoraops_palette"));
-    api<{ business_name: string | null; logo_url: string | null; theme_palette: string | null }>(
-      "/api/settings/branding",
-    )
+    api<{
+      business_name: string | null; logo_url: string | null;
+      theme_palette: string | null;
+      currency_symbol: string | null; currency_decimals: number | null;
+    }>("/api/settings/branding")
       .then((b) => {
         applyPalette(b.theme_palette);
         localStorage.setItem("agoraops_palette", b.theme_palette ?? "celeste");
+        configureCurrency({ symbol: b.currency_symbol, decimals: b.currency_decimals });
         setBranding({ name: b.business_name, logoUrl: b.logo_url });
       })
       .catch(() => {});

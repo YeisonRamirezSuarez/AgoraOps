@@ -17,7 +17,7 @@ import {
   LayoutGrid, Plus, Trash2, WalletCards, X, Zap,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
-import { escHtml, printReceipt } from "../lib/printing";
+import { type DocLine, printToEndpoint } from "../lib/printing";
 import { Badge, Button, cop, Field, Input, Loader, MoneyInput, Select, useToast } from "../components/ui";
 import type { Order, OrderItem } from "./Orden";
 
@@ -225,58 +225,45 @@ export default function Pago() {
     navigate(fullyPaid ? "/mesas" : `/mesas/${orderId}`);
   }
 
-  /** Imprime el comprobante de pago final en una ventana aparte. */
-  function printVoucher() {
+  /** Imprime el comprobante de pago final (endpoint PAGO, ancho de la impresora). */
+  async function printVoucher() {
     if (!voucher || !order) return;
     const s = options?.settings;
-    const esc = escHtml;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Voucher ${esc(order.order_number)}</title>
-<style>
-  body{font-family:'Courier New',monospace;font-size:12px;width:300px;margin:0 auto;padding:12px;color:#000}
-  h1{font-size:14px;text-align:center;margin:0}
-  p{margin:2px 0;text-align:center}
-  table{width:100%;border-collapse:collapse;margin:8px 0}
-  td{padding:1px 0;vertical-align:top}
-  .r{text-align:right}.b{font-weight:bold}
-  hr{border:none;border-top:1px dashed #000;margin:6px 0}
-</style></head><body onload="window.print();window.onafterprint=()=>window.close()">
-<h1>${esc(s?.business_name || "AgoraOps")}</h1>
-${s?.tax_id ? `<p>NIT: ${esc(s.tax_id)}</p>` : ""}
-${s?.address ? `<p>${esc(s.address)}</p>` : ""}
-${s?.phone ? `<p>Tel: ${esc(s.phone)}</p>` : ""}
-<hr>
-<p class="b">VOUCHER DE PAGO</p>
-<p>Orden #${esc(order.order_number)}${tableNumber != null ? ` · Mesa ${tableNumber}` : ""}</p>
-<p>${new Date().toLocaleString("es-CO")}</p>
-<p>Cliente: ${esc(voucher.clientName || "—")}</p>
-<hr>
-<table>
-${voucher.items.map((i) =>
-    `<tr><td>${i.quantity}x ${esc(i.product_name)}</td><td class="r">${cop.format(Number(i.subtotal))}</td></tr>`,
-  ).join("")}
-</table>
-<hr>
-<table>
-<tr><td>Subtotal</td><td class="r">${cop.format(voucher.subtotal)}</td></tr>
-<tr><td>Propina</td><td class="r">${cop.format(voucher.tip)}</td></tr>
-<tr class="b"><td>TOTAL</td><td class="r">${cop.format(voucher.total)}</td></tr>
-<tr><td>Recibido</td><td class="r">${cop.format(voucher.received)}</td></tr>
-<tr><td>Cambio</td><td class="r">${cop.format(voucher.change)}</td></tr>
-</table>
-<hr>
-<table>
-${voucher.payments.map((p) =>
-    `<tr><td>${esc(p.method)}<br><span style="font-size:10px">${esc(p.voucher_number)}</span></td><td class="r">${cop.format(Number(p.amount))}</td></tr>`,
-  ).join("")}
-</table>
-<p>¡Gracias por su compra!</p>
-</body></html>`;
-    if (!printReceipt(html, 620)) {
-      toast("error", "No fue posible imprimir el voucher.");
-      return;
+    const doc: DocLine[] = [
+      { t: "text", v: s?.business_name || "AgoraOps", align: "center" },
+      ...(s?.tax_id ? [{ t: "text", v: `NIT: ${s.tax_id}`, align: "center" } as DocLine] : []),
+      ...(s?.address ? [{ t: "text", v: s.address, align: "center" } as DocLine] : []),
+      ...(s?.phone ? [{ t: "text", v: `Tel: ${s.phone}`, align: "center" } as DocLine] : []),
+      { t: "divider" },
+      { t: "text", v: "VOUCHER DE PAGO", align: "center" },
+      { t: "text", v: `Orden #${order.order_number}${tableNumber != null ? ` - Mesa ${tableNumber}` : ""}` },
+      { t: "text", v: new Date().toLocaleString("es-CO") },
+      { t: "text", v: `Cliente: ${voucher.clientName || "-"}` },
+      { t: "divider" },
+      ...voucher.items.map((i): DocLine => ({
+        t: "row", left: `${i.quantity}x ${i.product_name}`, right: cop.format(Number(i.subtotal)),
+      })),
+      { t: "divider" },
+      { t: "kv", k: "Subtotal", v: cop.format(voucher.subtotal) },
+      { t: "kv", k: "Propina", v: cop.format(voucher.tip) },
+      { t: "kv", k: "TOTAL", v: cop.format(voucher.total) },
+      { t: "kv", k: "Recibido", v: cop.format(voucher.received) },
+      { t: "kv", k: "Cambio", v: cop.format(voucher.change) },
+      { t: "divider" },
+      ...voucher.payments.flatMap((p): DocLine[] => [
+        { t: "row", left: p.method, right: cop.format(Number(p.amount)) },
+        ...(p.voucher_number ? [{ t: "text", v: `  ${p.voucher_number}` } as DocLine] : []),
+      ]),
+      { t: "blank" },
+      { t: "text", v: "¡Gracias por su compra!", align: "center" },
+    ];
+    try {
+      await printToEndpoint("PAGO", doc);
+      toast("success", "El voucher fue impreso.");
+      finish();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "No fue posible imprimir el voucher.");
     }
-    toast("success", "El voucher fue impreso.");
-    finish();
   }
 
   if (!order || !options) return <Loader label="Cargando cuenta" />;
@@ -404,7 +391,20 @@ ${voucher.payments.map((p) =>
               {!split && (
                 <Field label="Método de pago">
                   <Select value={singleLine?.method_id ?? ""}
-                    onChange={(e) => setLine(0, { method_id: e.target.value, bank_id: "" })}>
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      // COMBINADO no es un medio de pago real: al elegirlo se
+                      // activa el modo combinado (pago con varios métodos).
+                      if (methodName(id) === "COMBINADO") {
+                        setSplit(true);
+                        setLines([
+                          { method_id: "", bank_id: "", amount: "" },
+                          { method_id: "", bank_id: "", amount: "" },
+                        ]);
+                        return;
+                      }
+                      setLine(0, { method_id: id, bank_id: "" });
+                    }}>
                     {options.methods.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
@@ -478,7 +478,7 @@ ${voucher.payments.map((p) =>
                         <Select value={l.method_id}
                           onChange={(e) => setLine(idx, { method_id: e.target.value, bank_id: "" })}>
                           <option value="">— Método de pago —</option>
-                          {options.methods.map((m) => (
+                          {options.methods.filter((m) => m.name !== "COMBINADO").map((m) => (
                             <option key={m.id} value={m.id}>{m.name}</option>
                           ))}
                         </Select>

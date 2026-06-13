@@ -33,8 +33,7 @@ import {
   isCartStatus, isFinished, isInKitchen, KITCHEN_STATUS_LABELS,
 } from "../shared/constants/kitchenStatus";
 import type { KitchenStatus } from "../shared/constants/kitchenStatus";
-import { imprimirComanda, imprimirPreFactura, listPrinters } from "../lib/printing";
-import type { Printer as PrinterInfo } from "../lib/printing";
+import { imprimirComanda, imprimirPreFactura } from "../lib/printing";
 
 /* ───── tipos (formas del backend /menu/polaris y /orders/:id) ───── */
 interface Variant {
@@ -209,22 +208,19 @@ export default function Orden() {
 
   async function printComanda(itemIds?: number[]) {
     try {
-      const printers = await listPrinters("comanda");
-      const ok = await imprimirComanda(order!.id, itemIds, printers[0] ?? null);
-      if (ok) toast("success", "Impresión enviada");
-    } catch {
-      toast("error", "Error al imprimir");
+      await imprimirComanda(order!.id, itemIds);
+      toast("success", "Impresión enviada");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Error al imprimir");
     }
   }
 
   async function printPrefactura() {
     try {
-      const printers = await listPrinters("prefactura");
-      const ok = await imprimirPreFactura(order!.id, printers[0] ?? null);
-      if (ok) toast("success", "Impresión enviada");
-      else toast("error", "No hay impresoras de prefactura configuradas");
-    } catch {
-      toast("error", "Error al imprimir");
+      await imprimirPreFactura(order!.id);
+      toast("success", "Impresión enviada");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Error al imprimir");
     }
   }
 

@@ -17,20 +17,16 @@ import {
   DollarSign, Info, Package, Smartphone, Target, TrendingUp, UtensilsCrossed, X, ChevronRight,
 } from "lucide-react";
 import { api } from "../lib/api";
-import { Loader } from "../components/ui";
+import { cop, Loader } from "../components/ui";
 
-/* ───────────────────────── Formatos (es-CO, COP — como Polaris) ───────── */
+/* ───────────────────────── Formatos (es-CO) ───────────────────────────── */
 
-const fmtMoney = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  currencyDisplay: "narrowSymbol",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
+// El dinero se formatea con `cop` (símbolo y decimales del establecimiento,
+// configurables — nacional/internacional). fmtQty/fmtNumber son para
+// cantidades (no dinero) y conservan su formato.
 const fmtQty = new Intl.NumberFormat("es-CO");
 
-/** Polaris formatNumberDynamic: 1.234.567,89 (siempre 2 decimales). */
+/** Cantidades con separador de miles y 2 decimales (no dinero). */
 function fmtNumber(num: number, decimals = 2): string {
   const fixed = (Number.isFinite(num) ? num : 0).toFixed(decimals);
   const [int, dec] = fixed.split(".");
@@ -275,11 +271,11 @@ function KpiCard({ Icon, title, value, goal }: {
           {title}
         </p>
       </div>
-      <p className="mt-3 text-3xl font-extrabold">${fmtNumber(animated)}</p>
+      <p className="mt-3 text-3xl font-extrabold">{cop.format(animated)}</p>
       <div className="mt-3">
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-accent-amber/10 px-3 py-1.5 text-xs font-semibold text-accent-amber">
           <Target size={14} />
-          Objetivo: ${fmtNumber(goal)}
+          Objetivo: {cop.format(goal)}
         </span>
       </div>
     </div>
@@ -377,7 +373,7 @@ function WaiterCard({ waiters, dates }: {
                   style={{ height: `${(w.value / maxVal) * 80}%` }}
                 >
                   <div className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-text-primary px-2 py-0.5 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
-                    {fmtMoney.format(w.value)}
+                    {cop.format(w.value)}
                   </div>
                 </div>
               </div>
@@ -631,7 +627,7 @@ function UserRankingCard({ data, onReload }: {
         </div>
         <div className="rounded-xl border-l-4 border-accent-rose bg-accent-blue/10 p-4">
           <p className="text-xs font-bold uppercase text-accent-rose">Ticket Promedio</p>
-          <p className="mt-2 text-2xl font-extrabold">{fmtMoney.format(kpiTicket)}</p>
+          <p className="mt-2 text-2xl font-extrabold">{cop.format(kpiTicket)}</p>
         </div>
       </div>
 
@@ -708,7 +704,7 @@ function RankingList({ rows, view, metricOf }: {
                 <span className="rounded-full bg-accent-blue/15 px-2.5 py-0.5 text-xs font-semibold text-accent-blue">
                   {view === "orders"
                     ? `${fmtQty.format(value)} pedidos`
-                    : fmtMoney.format(value)}
+                    : cop.format(value)}
                 </span>
                 {view === "payments" && (
                   <span className="whitespace-nowrap text-xs font-semibold text-text-muted">
@@ -727,7 +723,7 @@ function RankingList({ rows, view, metricOf }: {
               <span>{view === "orders" ? "Ventas Generadas" : "Pagos Procesados"}</span>
               <span className="font-semibold text-accent-blue">
                 {view === "orders"
-                  ? fmtMoney.format(amount)
+                  ? cop.format(amount)
                   : fmtQty.format(Number(item.count || 0))}
               </span>
             </div>
@@ -782,7 +778,7 @@ function DonutPanel({ rows, view }: {
           <div className="grid h-32 w-32 place-items-center rounded-full bg-bg-secondary text-center">
             <div className="px-2">
               <p className="max-w-[7.5rem] truncate text-[11px] text-text-muted">{center.label}</p>
-              <p className="text-sm font-extrabold">{fmtMoney.format(center.value)}</p>
+              <p className="text-sm font-extrabold">{cop.format(center.value)}</p>
             </div>
           </div>
         </div>
@@ -816,7 +812,7 @@ function DonutPanel({ rows, view }: {
 /* ───────────────────────── Tendencia operativa (canvas) ───────────────── */
 
 const TREND_CONFIG = {
-  amount: { title: "Ventas cobradas", color: "#0ea5e9", fmt: (v: number) => fmtMoney.format(v) },
+  amount: { title: "Ventas cobradas", color: "#0ea5e9", fmt: (v: number) => cop.format(v) },
   orders: { title: "Pedidos gestionados", color: "#2563eb", fmt: (v: number) => fmtQty.format(Math.round(v)) },
   payments: { title: "Pagos procesados", color: "#10b981", fmt: (v: number) => fmtQty.format(Math.round(v)) },
 } as const;
@@ -1036,7 +1032,7 @@ function PaymentsCard({ payments, dates }: {
           <p className="text-xs font-bold uppercase text-text-secondary">
             Total Propinas Recaudadas
           </p>
-          <p className="mt-2 text-2xl font-extrabold">{fmtMoney.format(totalTips)}</p>
+          <p className="mt-2 text-2xl font-extrabold">{cop.format(totalTips)}</p>
         </div>
       </div>
 
@@ -1072,7 +1068,7 @@ function PaymentsCard({ payments, dates }: {
               style={{ bottom: `${tick * 100}%` }}
             >
               <span className="absolute -left-20 -top-2 w-16 text-right text-[10px] text-text-muted">
-                ${fmtNumber(scaleMax * tick)}
+                {cop.format(scaleMax * tick)}
               </span>
             </div>
           ))}
@@ -1095,7 +1091,7 @@ function PaymentsCard({ payments, dates }: {
                       <span>Pagos:</span> <strong>{d.count}</strong>
                     </p>
                     <p className="flex justify-between" style={{ color: tipColor }}>
-                      <span>Propina:</span> <span>{fmtMoney.format(Number(d.tip))}</span>
+                      <span>Propina:</span> <span>{cop.format(Number(d.tip))}</span>
                     </p>
                   </div>
                   <div

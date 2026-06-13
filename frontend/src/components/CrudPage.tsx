@@ -20,6 +20,12 @@ export interface CrudField {
   type?: "text" | "number" | "money" | "select" | "checkbox" | "datetime-local";
   options?: { value: string | number; label: string }[];
   required?: boolean;
+  /** Longitud máxima del texto (réplica de los maxlength de Polaris). */
+  maxLength?: number;
+  /** Etiquetas del estado booleano (default "Sí"/"No"; Polaris usa
+   * "Activo"/"Inactivo" como en Métodos de pago). */
+  trueLabel?: string;
+  falseLabel?: string;
   /** No editable después de crear (ej. número de mesa §1.7.2). */
   immutable?: boolean;
   /** Mostrar en la tabla (default true). */
@@ -175,7 +181,7 @@ export function CrudPage({
     if (f.type === "checkbox") {
       return (
         <span className={v ? "font-medium text-accent-emerald" : "text-text-muted"}>
-          {v ? "Sí" : "No"}
+          {v ? (f.trueLabel ?? "Sí") : (f.falseLabel ?? "No")}
         </span>
       );
     }
@@ -203,13 +209,13 @@ export function CrudPage({
             <input type="radio" checked={!!v} disabled={disabled}
               onChange={() => setEditing({ ...editing!, [f.name]: true })}
               className="h-3.5 w-3.5 accent-[var(--color-accent-blue)]" />
-            Sí
+            {f.trueLabel ?? "Sí"}
           </label>
           <label className="flex items-center gap-1">
             <input type="radio" checked={!v} disabled={disabled}
               onChange={() => setEditing({ ...editing!, [f.name]: false })}
               className="h-3.5 w-3.5 accent-[var(--color-accent-blue)]" />
-            No
+            {f.falseLabel ?? "No"}
           </label>
         </span>
       );
@@ -228,7 +234,7 @@ export function CrudPage({
     }
     if (f.type === "money") {
       return (
-        <MoneyInput value={String(v ?? "")} disabled={disabled}
+        <MoneyInput value={String(v ?? "")} disabled={disabled} maxLength={f.maxLength}
           onValueChange={(raw) => setEditing({ ...editing!, [f.name]: raw })}
           className="!w-auto !min-w-40 !py-1.5" />
       );
@@ -236,7 +242,7 @@ export function CrudPage({
     return (
       <Input type={f.type ?? "text"} value={String(v ?? "")} disabled={disabled}
         onChange={(e) => setEditing({ ...editing!, [f.name]: e.target.value })}
-        className="!w-auto !min-w-40 !py-1.5"
+        className="!w-auto !min-w-40 !py-1.5" maxLength={f.maxLength}
         step={f.type === "number" ? "any" : undefined} />
     );
   }
@@ -284,11 +290,11 @@ export function CrudPage({
                     className="h-4 w-4 accent-[var(--color-accent-blue)]" />
                 ) : f.type === "money" ? (
                   <MoneyInput value={String(editing[f.name] ?? "")}
-                    required={f.required} disabled={disabled}
+                    required={f.required} disabled={disabled} maxLength={f.maxLength}
                     onValueChange={(raw) => setEditing({ ...editing, [f.name]: raw })} />
                 ) : (
                   <Input type={f.type ?? "text"} value={String(editing[f.name] ?? "")}
-                    required={f.required} disabled={disabled}
+                    required={f.required} disabled={disabled} maxLength={f.maxLength}
                     onChange={(e) => setEditing({ ...editing, [f.name]: e.target.value })}
                     step={f.type === "number" ? "any" : undefined} />
                 )}

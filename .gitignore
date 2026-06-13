@@ -6,6 +6,12 @@ frontend/dist/
 backend/dist/
 .vercel/
 
+# Servicio de impresión: el .exe/.zip los compila y publica GitHub Actions
+# (.github/workflows/print-service.yml) como Release; nunca van al repo.
+print-service/dist/
+backend/print-service-installers/*.zip
+backend/print-service-installers/*.exe
+
 # Entorno (credenciales — nunca al repo)
 .env
 .env.*

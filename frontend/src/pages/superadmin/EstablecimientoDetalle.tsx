@@ -44,6 +44,9 @@ interface TenantDetail {
   facebook: string | null;
   instagram: string | null;
   theme_palette: string | null;
+  currency_code: string | null;
+  currency_symbol: string | null;
+  currency_decimals: number | null;
   users: TenantUser[];
 }
 
@@ -111,6 +114,9 @@ export default function EstablecimientoDetalle() {
           facebook: t.facebook ?? "",
           instagram: t.instagram ?? "",
           themePalette: t.theme_palette ?? "celeste",
+          currencyCode: t.currency_code ?? "COP",
+          currencySymbol: t.currency_symbol ?? "$",
+          currencyDecimals: (t.currency_decimals === 2 ? 2 : 0),
         });
       })
       .catch((e) => toast("error", e.message));
@@ -163,6 +169,9 @@ export default function EstablecimientoDetalle() {
           facebook: config.facebook || null,
           instagram: config.instagram || null,
           themePalette: config.themePalette,
+          currencyCode: config.currencyCode,
+          currencySymbol: config.currencySymbol,
+          currencyDecimals: config.currencyDecimals,
         },
       });
       toast("success", "Configuración guardada.");

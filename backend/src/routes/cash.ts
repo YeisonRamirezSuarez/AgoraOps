@@ -7,12 +7,29 @@
  */
 import { Router } from "express";
 import { z } from "zod";
+import { join, dirname, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { query, queryOne } from "../db.js";
 import { dbErrorMessage } from "../lib/crud.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const cashRouter = Router();
 cashRouter.use(requireAuth, requireAdmin);
+
+// Carpeta local con instaladores (fallback de desarrollo; servida estática en
+// /print-service desde index.ts). En producción el instalador se baja de un
+// GitHub Release (ver más abajo), no de aquí.
+export const INSTALLERS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)), "..", "..", "print-service-installers",
+);
+
+// El .exe del servicio de impresión NO se versiona ni se sube a Vercel: lo
+// compila GitHub Actions (.github/workflows/print-service.yml) y lo publica
+// como asset de un Release con tag fijo. La pantalla de descarga lista ese
+// Release vía la API pública de GitHub y enlaza directo al asset (la descarga
+// de ~15MB sale de GitHub, no del backend serverless).
+const GITHUB_REPO = process.env.GITHUB_REPO ?? "YeisonRamirezSuarez/AgoraOps";
+const PRINT_SERVICE_TAG = process.env.PRINT_SERVICE_TAG ?? "print-service";
 
 /** Aislamiento multi-tenant: toda ruta con :id opera sobre una sesión de
  * caja; se valida una vez que pertenezca al tenant del JWT antes de
@@ -30,6 +47,132 @@ cashRouter.param("id", (req, res, next, id) => {
       next();
     })
     .catch(next);
+});
+
+/* ═══════════ Descargar servicio de impresión (§1.8.5) — réplica de Polaris
+   (blank_descarga_servicios): lista el instalador del último GitHub Release
+   (compilado por CI) con su metadata y enlace directo de descarga. ═══════════ */
+interface InstallerFile { name: string; size: number; type: string; date: string; url: string; }
+
+cashRouter.get("/print-service", async (_req, res) => {
+  let files: InstallerFile[] = [];
+  try {
+    const r = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${PRINT_SERVICE_TAG}`,
+      {
+        headers: { Accept: "application/vnd.github+json", "User-Agent": "AgoraOps" },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
+    if (r.ok) {
+      const rel = (await r.json()) as {
+        assets?: { name: string; size: number; updated_at: string; browser_download_url: string }[];
+      };
+      files = (rel.assets ?? []).map((a) => ({
+        name: a.name,
+        size: a.size,
+        type: (extname(a.name).slice(1) || "—").toUpperCase(),
+        date: a.updated_at,
+        url: a.browser_download_url,
+      }));
+    }
+  } catch {
+    files = []; // sin Release aún o GitHub no disponible → sin archivos
+  }
+  const totalSize = files.reduce((s, f) => s + f.size, 0);
+  res.json({ files, count: files.length, totalSize });
+});
+
+/* ═════════════ Cajas (§1.8.2) — CRUD con auditoría, réplica de Polaris
+   (grid_public_cash_registers + form_public_cash_registers). El nombre es
+   inmutable; el estado solo cambia con la caja cerrada y solo se elimina si
+   nunca fue abierta (triggers de 00012). Estado: FUNCIONANDO/FALLANDO. ═══ */
+cashRouter.get("/registers", async (req, res) => {
+  const rows = await query(
+    `SELECT cr.id, cr.name, cr.status, cr.note,
+            bs.business_name AS restaurant_name,
+            cr.created_at, cr.updated_at,
+            cu.full_name AS created_by_name,
+            uu.full_name AS updated_by_name
+     FROM cash_registers cr
+     LEFT JOIN business_settings bs ON bs.tenant_id = cr.tenant_id
+     LEFT JOIN users cu ON cu.id = cr.created_by
+     LEFT JOIN users uu ON uu.id = cr.updated_by
+     WHERE cr.tenant_id = $1
+     ORDER BY cr.id`,
+    [req.user!.tenantId],
+  );
+  res.json(rows);
+});
+
+const REGISTER_STATUS = z.enum(["FUNCIONANDO", "FALLANDO"]);
+
+cashRouter.post("/registers", async (req, res) => {
+  const schema = z.object({
+    name: z.string().trim().min(1, "Nombre de la caja: Campo obligatorio").max(50),
+    status: REGISTER_STATUS.default("FUNCIONANDO"),
+    note: z.string().trim().min(1, "Nota: Campo obligatorio").max(250),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  const { name, status, note } = parsed.data;
+  try {
+    const row = await queryOne(
+      `INSERT INTO cash_registers (tenant_id, name, status, note, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.user!.tenantId, name, status, note, req.user!.id],
+    );
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+// El nombre es inmutable (Polaris): solo se actualizan estado y nota.
+cashRouter.put("/registers/:rid", async (req, res) => {
+  const schema = z.object({
+    status: REGISTER_STATUS,
+    note: z.string().trim().min(1, "Nota: Campo obligatorio").max(250),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  try {
+    const row = await queryOne(
+      `UPDATE cash_registers SET status = $3, note = $4,
+              updated_by = $5, updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+      [req.params.rid, req.user!.tenantId, parsed.data.status, parsed.data.note, req.user!.id],
+    );
+    if (!row) {
+      res.status(404).json({ error: "Caja no encontrada" });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+cashRouter.delete("/registers/:rid", async (req, res) => {
+  try {
+    const row = await queryOne(
+      "DELETE FROM cash_registers WHERE id = $1 AND tenant_id = $2 RETURNING id",
+      [req.params.rid, req.user!.tenantId],
+    );
+    if (!row) {
+      res.status(404).json({ error: "Caja no encontrada" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
 });
 
 /** Cajas con su sesión abierta (si existe) + total en efectivo actual
@@ -130,12 +273,15 @@ cashRouter.get("/sessions/:id/summary", async (req, res) => {
 /** Cerrar caja: efectivo contado + nota obligatoria (§1.8.3). */
 cashRouter.post("/sessions/:id/close", async (req, res) => {
   const schema = z.object({
-    countedCash: z.number().min(0).nullable(),
-    note: z.string().min(1, "El campo Nota es obligatorio"),
+    countedCash: z.number({
+      required_error: "El campo Efectivo contado es obligatorio para cerrar la caja",
+      invalid_type_error: "El campo Efectivo contado es obligatorio para cerrar la caja",
+    }).min(0),
+    note: z.string().min(1, "El campo Nota es obligatorio para cerrar la caja"),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "El campo Nota es obligatorio para cerrar la caja" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
     return;
   }
   try {

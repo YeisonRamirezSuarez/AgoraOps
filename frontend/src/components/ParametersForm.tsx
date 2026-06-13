@@ -1,11 +1,49 @@
 /**
  * Configuración de parámetros — manual §1.8.1 (vive bajo Gestión de
- * Cajas como en Polaris Food): datos del negocio, propina (CO/EC),
- * % de servicio (EC) y sobregiro de inventario.
+ * Cajas como en Polaris Food). Réplica del flujo de Polaris
+ * (blank_param_service): secciones Propina y, solo para Ecuador, % de
+ * Servicio, más el sobregiro de inventario. Los datos del negocio
+ * (nombre, NIT, dirección, logo) NO van aquí: se administran desde el
+ * Super Admin, igual que Polaris no los muestra en esta pantalla.
  */
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { Button, Field, Input, Loader, useToast } from "./ui";
+import { Button, Input, Loader, useToast } from "./ui";
+
+/** Interruptor tipo switch (réplica del "HABILITAR" de Polaris, tema hpos). */
+function Switch({ checked, onChange, label }: {
+  checked: boolean; onChange: (v: boolean) => void; label?: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-white">
+      {label && <span>{label}</span>}
+      <button type="button" role="switch" aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 rounded-full transition-colors ${
+          checked ? "bg-accent-blue" : "bg-text-muted/40"
+        }`}>
+        <span className={`absolute top-0.5 grid h-5 w-5 place-items-center rounded-full bg-white text-[10px] transition-transform ${
+          checked ? "translate-x-[22px] text-accent-blue" : "translate-x-0.5 text-text-muted"
+        }`}>
+          {checked ? "✓" : "✕"}
+        </span>
+      </button>
+    </label>
+  );
+}
+
+/** Encabezado de sección estilo Polaris (barra con título y, opcional,
+ * el switch HABILITAR a la derecha). */
+function SectionHeader({ title, children }: {
+  title: string; children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-t-2xl bg-accent-blue px-4 py-2.5 text-white">
+      <span className="font-semibold">{title}</span>
+      {children}
+    </div>
+  );
+}
 
 export function ParametersForm() {
   const toast = useToast();
@@ -26,9 +64,8 @@ export function ParametersForm() {
       await api("/api/settings", {
         method: "PUT",
         body: {
-          business_name: s!.business_name, phone: s!.phone, tax_id: s!.tax_id,
-          address: s!.address, facebook: s!.facebook, instagram: s!.instagram,
-          tip_enabled: !!s!.tip_enabled, tip_percentage: Number(s!.tip_percentage ?? 0),
+          tip_enabled: !!s!.tip_enabled,
+          tip_percentage: Number(s!.tip_percentage ?? 0),
           service_enabled: !!s!.service_enabled,
           service_percentage: Number(s!.service_percentage ?? 0),
           allow_overdraft: !!s!.allow_overdraft,
@@ -45,62 +82,53 @@ export function ParametersForm() {
   const set = (k: string, v: unknown) => setS({ ...s, [k]: v });
 
   return (
-    <form onSubmit={save} className="max-w-xl space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Nombre del negocio">
-          <Input value={String(s.business_name ?? "")} onChange={(e) => set("business_name", e.target.value)} required />
-        </Field>
-        <Field label="Teléfono">
-          <Input value={String(s.phone ?? "")} onChange={(e) => set("phone", e.target.value)} />
-        </Field>
-        <Field label={isEC ? "RUC" : "NIT"}>
-          <Input value={String(s.tax_id ?? "")} onChange={(e) => set("tax_id", e.target.value)} />
-        </Field>
-        <Field label="Dirección">
-          <Input value={String(s.address ?? "")} onChange={(e) => set("address", e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="glass space-y-3 rounded-2xl p-4">
-        <label className="flex items-center justify-between text-sm">
-          <span>Propina habilitada</span>
-          <input type="checkbox" checked={!!s.tip_enabled}
-            onChange={(e) => set("tip_enabled", e.target.checked)}
-            className="h-4 w-4 accent-[var(--color-accent-blue)]" />
-        </label>
-        {!!s.tip_enabled && (
-          <Field label="Porcentaje de propina (%)">
+    <form onSubmit={save} className="max-w-2xl space-y-5">
+      {/* ── Propina (CO y EC) ── */}
+      <div className="glass overflow-hidden rounded-2xl">
+        <SectionHeader title="Propina">
+          <Switch label="HABILITAR" checked={!!s.tip_enabled}
+            onChange={(v) => set("tip_enabled", v)} />
+        </SectionHeader>
+        <div className="grid items-center gap-2 px-4 py-4 sm:grid-cols-[220px_1fr]">
+          <span className="text-sm font-medium">Porcentaje de Propina</span>
+          <div>
             <Input type="number" min={0} max={100} value={String(s.tip_percentage ?? 0)}
               onChange={(e) => set("tip_percentage", e.target.value)} />
-          </Field>
-        )}
-        {isEC && (
-          <>
-            <label className="flex items-center justify-between text-sm">
-              <span>% de servicio (Ecuador)</span>
-              <input type="checkbox" checked={!!s.service_enabled}
-                onChange={(e) => set("service_enabled", e.target.checked)}
-                className="h-4 w-4 accent-[var(--color-accent-blue)]" />
-            </label>
-            {!!s.service_enabled && (
-              <Field label="Porcentaje de servicio (%)">
-                <Input type="number" min={0} max={100} value={String(s.service_percentage ?? 0)}
-                  onChange={(e) => set("service_percentage", e.target.value)} />
-              </Field>
-            )}
-          </>
-        )}
-        <label className="flex items-center justify-between text-sm">
-          <span>
-            Permitir sobregiro del inventario
-            <span className="block text-xs text-text-muted">
-              Permite vender sin validar existencias (el stock puede quedar negativo) — §1.8.1
-            </span>
-          </span>
-          <input type="checkbox" checked={!!s.allow_overdraft}
-            onChange={(e) => set("allow_overdraft", e.target.checked)}
-            className="h-4 w-4 accent-[var(--color-accent-blue)]" />
-        </label>
+            <p className="mt-1 text-xs text-text-muted">
+              El porcentaje debe ser mínimo 0 y como máximo 100.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Servicio (solo Ecuador) ── */}
+      {isEC && (
+        <div className="glass overflow-hidden rounded-2xl">
+          <SectionHeader title="Servicio">
+            <Switch label="HABILITAR" checked={!!s.service_enabled}
+              onChange={(v) => set("service_enabled", v)} />
+          </SectionHeader>
+          <div className="grid items-center gap-2 px-4 py-4 sm:grid-cols-[220px_1fr]">
+            <span className="text-sm font-medium">Porcentaje de Servicio</span>
+            <div>
+              <Input type="number" min={0} max={100} value={String(s.service_percentage ?? 0)}
+                onChange={(e) => set("service_percentage", e.target.value)} />
+              <p className="mt-1 text-xs text-text-muted">
+                El porcentaje debe ser mínimo 0 y como máximo 100.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Inventario ── */}
+      <div className="glass overflow-hidden rounded-2xl">
+        <SectionHeader title="Inventario" />
+        <div className="flex items-center justify-between px-4 py-4">
+          <span className="text-sm font-medium">Permitir sobregiro del inventario</span>
+          <Switch checked={!!s.allow_overdraft}
+            onChange={(v) => set("allow_overdraft", v)} />
+        </div>
       </div>
 
       <Button type="submit" disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>

@@ -65,10 +65,13 @@ catalogsRouter.use("/denominations", crudRouter({
   orderBy: "value",
 }));
 
-// §1.8.6 Impresoras (nombre inmutable — trigger en BD)
+// §1.8.6 Impresoras (nombre inmutable — trigger en BD). Réplica de Polaris:
+// una fila por endpoint (PAGO/PEDIDO/PREFACTURA/CAJA). Extensiones del
+// cliente: paper_width (58/80mm) y BLUETOOTH (ver migración 00042).
 catalogsRouter.use("/printers", crudRouter({
   table: "printers",
-  columns: ["name", "connection_type", "device_name", "ip_address", "port", "location", "is_active"],
+  columns: ["name", "connection_type", "device_name", "ip_address", "port",
+    "endpoint", "paper_width", "location", "is_active"],
 }));
 
 // §1.14 Grupos (eliminar con usuarios asociados lo bloquea el trigger)
@@ -85,9 +88,5 @@ catalogsRouter.use("/inventory-products", crudRouter({
   orderBy: "name",
 }));
 
-// §1.8.2 Cajas (editar solo estado/nota y eliminar si nunca abierta — triggers BD)
-catalogsRouter.use("/cash-registers", crudRouter({
-  table: "cash_registers",
-  columns: ["name", "status", "note"],
-  immutable: ["name"],
-}));
+// §1.8.2 Cajas: ahora con auditoría y estado FUNCIONANDO/FALLANDO en
+// rutas dedicadas (GET/POST/PUT/DELETE /api/cash/registers en cash.ts).

@@ -6,7 +6,7 @@
  */
 import { useRef } from "react";
 import { ImagePlus, Trash2, Check } from "lucide-react";
-import { FormRow, Input, Select, useToast } from "../../components/ui";
+import { FormRow, Field, Input, Select, useToast } from "../../components/ui";
 import { PALETTES, getPalette } from "../../shared/constants/palettes";
 
 export interface TenantConfig {
@@ -21,6 +21,9 @@ export interface TenantConfig {
   facebook: string;
   instagram: string;
   themePalette: string;
+  currencyCode: string;
+  currencySymbol: string;
+  currencyDecimals: 0 | 2;
 }
 
 export const EMPTY_CONFIG: TenantConfig = {
@@ -35,7 +38,17 @@ export const EMPTY_CONFIG: TenantConfig = {
   facebook: "",
   instagram: "",
   themePalette: "celeste",
+  currencyCode: "COP",
+  currencySymbol: "$",
+  currencyDecimals: 0,
 };
+
+/** Moneda por defecto según país (el Super Admin puede sobreescribirla). */
+export function currencyDefaults(country: "CO" | "EC") {
+  return country === "EC"
+    ? { currencyCode: "USD", currencySymbol: "$", currencyDecimals: 2 as const }
+    : { currencyCode: "COP", currencySymbol: "$", currencyDecimals: 0 as const };
+}
 
 const TIMEZONES = [
   "America/Bogota",
@@ -205,6 +218,8 @@ export function TenantFields({ value, onChange, slugLocked = false }: {
               set({
                 country,
                 timezone: country === "EC" ? "America/Guayaquil" : "America/Bogota",
+                // La moneda sigue al país; el Super Admin puede ajustarla abajo.
+                ...currencyDefaults(country),
               });
             }}>
             <option value="CO">Colombia</option>
@@ -217,6 +232,27 @@ export function TenantFields({ value, onChange, slugLocked = false }: {
             {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
           </Select>
         </FormRow>
+      </div>
+
+      <SectionTitle>Moneda</SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Código (ISO)" required>
+          <Input value={value.currencyCode} maxLength={8}
+            onChange={(e) => set({ currencyCode: e.target.value.toUpperCase() })}
+            placeholder="COP" />
+        </Field>
+        <Field label="Símbolo" required>
+          <Input value={value.currencySymbol} maxLength={4}
+            onChange={(e) => set({ currencySymbol: e.target.value })}
+            placeholder="$" />
+        </Field>
+        <Field label="Decimales" required>
+          <Select value={String(value.currencyDecimals)}
+            onChange={(e) => set({ currencyDecimals: Number(e.target.value) as 0 | 2 })}>
+            <option value="0">0 (1.234)</option>
+            <option value="2">2 (1.234,56)</option>
+          </Select>
+        </Field>
       </div>
 
       <SectionTitle>Datos del negocio</SectionTitle>

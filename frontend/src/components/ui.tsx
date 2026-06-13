@@ -124,15 +124,17 @@ export function FormRow({ label, required, children }: {
 
 export function Field({
   label,
+  required,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-text-secondary">
-        {label}
+        {label} {required && <span className="text-accent-rose">*</span>}
       </span>
       {children}
     </label>
@@ -180,24 +182,59 @@ export function PasswordInput(
   );
 }
 
-/** Input de dinero: muestra el valor formateado en COP mientras se
- * escribe (es-CO: 315000 → 315.000) y entrega al padre solo dígitos. */
+/* ─────────── Moneda configurable por establecimiento ───────────
+   El símbolo y los decimales se definen por establecimiento (Super Admin,
+   nacional/internacional) y se aplican en TODA la app: configureCurrency()
+   se llama al cargar el branding (Layout) tras iniciar sesión. */
+let currencyCfg = { symbol: "$", decimals: 0 };
+let currencyFmt = new Intl.NumberFormat("es-CO", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+export function configureCurrency(cfg: { symbol?: string | null; decimals?: number | null }) {
+  currencyCfg = {
+    symbol: cfg.symbol || "$",
+    decimals: cfg.decimals === 2 ? 2 : 0,
+  };
+  currencyFmt = new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: currencyCfg.decimals,
+    maximumFractionDigits: currencyCfg.decimals,
+  });
+}
+
+/** Decimales de moneda configurados (para inputs y validaciones). */
+export function currencyDecimals(): number {
+  return currencyCfg.decimals;
+}
+
+/** Input de dinero: muestra el valor formateado según los decimales del
+ * establecimiento mientras se escribe (sin decimales: 315000 → 315.000;
+ * con 2 decimales los dígitos se interpretan como centavos, estilo POS:
+ * 31500000 → 315.000,00) y entrega al padre el valor numérico. */
 export function MoneyInput({
   value,
   onValueChange,
   bare = false,
   className = "",
+  decimals,
   ...props
 }: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> & {
   value: string | number;
   onValueChange: (raw: string) => void;
   /** Sin estilos de campo (para inputs con estilo propio). */
   bare?: boolean;
+  /** Decimales a mostrar; por defecto los del establecimiento. */
+  decimals?: number;
 }) {
+  const dec = decimals ?? currencyCfg.decimals;
   const n = Number(value);
   const display = value === "" || value == null || Number.isNaN(n)
     ? ""
-    : new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(n);
+    : new Intl.NumberFormat("es-CO", {
+        minimumFractionDigits: dec,
+        maximumFractionDigits: dec,
+      }).format(n);
   return (
     <input
       {...props}
@@ -205,8 +242,10 @@ export function MoneyInput({
       inputMode="numeric"
       value={display}
       onChange={(e) => {
-        const raw = e.target.value.replace(/\D/g, "");
-        onValueChange(raw === "" ? "" : String(Number(raw)));
+        const digits = e.target.value.replace(/\D/g, "");
+        if (digits === "") { onValueChange(""); return; }
+        const num = dec > 0 ? Number(digits) / 10 ** dec : Number(digits);
+        onValueChange(String(num));
       }}
       className={bare ? className : `${FIELD_CLS} ${className}`}
     />
@@ -409,11 +448,14 @@ export function PageHeader({
   );
 }
 
-export const cop = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
+/** Formatea un monto con el símbolo y los decimales del establecimiento
+ * (ver configureCurrency). Mantiene la API `cop.format(n)` usada en la app. */
+export const cop = {
+  format(value: number): string {
+    const n = Number(value);
+    return `${currencyCfg.symbol}${currencyFmt.format(Number.isFinite(n) ? n : 0)}`;
+  },
+};
 
 /** Fecha y hora local (es-CO) de un valor de BD; `fallback` si viene vacío. */
 export function fmtDateTime(

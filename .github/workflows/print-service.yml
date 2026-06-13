@@ -1,0 +1,53 @@
+name: Build Print Service
+
+# Compila el servicio de impresión local (print-service/) a un .exe de Windows
+# y lo publica como asset de un GitHub Release con tag fijo "print-service".
+# La pantalla "Descargar servicio de impresión" lista ese Release vía la API
+# de GitHub. Así el binario NO se versiona ni se sube a Vercel: cada cambio en
+# print-service/ se recompila y publica solo.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "print-service/**"
+      - ".github/workflows/print-service.yml"
+  workflow_dispatch: {} # permite lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write # necesario para crear/actualizar el Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        working-directory: print-service
+        run: npm ci
+
+      - name: Compilar .exe (pkg)
+        working-directory: print-service
+        run: npm run build:win
+
+      - name: Empaquetar instalador (.zip)
+        working-directory: print-service
+        shell: pwsh
+        run: Compress-Archive -Path dist/AgoraOpsPrintService.exe -DestinationPath dist/AgoraOpsPrintService.zip -Force
+
+      - name: Publicar en GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: print-service
+          name: AgoraOps Print Service (instalador)
+          body: |
+            Instalador del servicio de impresión local de AgoraOps
+            (AgoraOpsPrintService, http://localhost:9090).
+            Compilado automáticamente desde print-service/ en cada cambio.
+          files: print-service/dist/AgoraOpsPrintService.zip
+          make_latest: false # no marcar como "latest" del repo (es un binario auxiliar)

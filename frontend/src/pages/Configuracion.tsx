@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp,
+  Target, XCircle,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { CrudPage } from "../components/CrudPage";
@@ -15,7 +16,10 @@ import { MesasGrid } from "../components/MesasGrid";
 import { HorariosCalendar } from "../components/HorariosCalendar";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
-import { Badge, Button, Loader, PageHeader, Table, useToast } from "../components/ui";
+import {
+  Badge, Button, FormRow, Input, Loader, Modal, MoneyInput, PageHeader,
+  Table, usePagination, useToast,
+} from "../components/ui";
 
 const TABS = [
   "Sala del restaurante", "Mesas del restaurante", "Etapas de reserva",
@@ -55,10 +59,7 @@ export default function Configuracion() {
       )}
 
       {tab === "Horarios" && <HorariosCalendar />}
-      {tab === "Objetivos" && (
-        <EnConstruccion titulo="Objetivos de ventas"
-          nota="Metas diaria, semanal y mensual visibles en el Dashboard (manual §1.7.5) — Fase 3 del roadmap." />
-      )}
+      {tab === "Objetivos" && <ObjetivosTab />}
       {tab === "Prioridad del menú" && <PrioridadMenuTab />}
 
       {tab === "Métodos de pago" && <PaymentMethodsTab />}
@@ -66,16 +67,16 @@ export default function Configuracion() {
       {tab === "Denominación de moneda" && (
         <CrudPage title="denominación" endpoint="/api/catalogs/denominations"
           fields={[
-            { name: "value", label: "Valor", type: "money", required: true },
-            { name: "is_active", label: "Estado", type: "checkbox" },
+            { name: "value", label: "Denominación de moneda", type: "money", required: true, maxLength: 17 },
+            { name: "is_active", label: "Estado", type: "checkbox", trueLabel: "Activo", falseLabel: "Inactivo" },
           ]} />
       )}
 
       {tab === "Bancos para transferencia" && (
         <CrudPage title="banco" endpoint="/api/catalogs/banks"
           fields={[
-            { name: "name", label: "Nombre", required: true },
-            { name: "is_active", label: "Estado", type: "checkbox" },
+            { name: "name", label: "Nombre del banco", required: true, maxLength: 120 },
+            { name: "is_active", label: "Estado", type: "checkbox", trueLabel: "Activo", falseLabel: "Inactivo" },
           ]} />
       )}
 
@@ -84,6 +85,205 @@ export default function Configuracion() {
           nota="Submódulo nuevo (no documentado en el manual v18) — pendiente de definición de requisitos." />
       )}
     </div>
+  );
+}
+
+/* ───────── Objetivos (§1.7.5) — réplica de Polaris form_tb_objetive ─────────
+   Registro único por establecimiento con las metas y fechas diaria, semanal
+   y mensual. El Dashboard usa estas fechas como rango de facturado. Las
+   validaciones replican Polaris (mensajes corregidos):
+     · los 8 campos son obligatorios;
+     · la fecha del día no puede ser menor a la fecha actual;
+     · la fecha fin de semana/mes no puede ser menor a su fecha inicio. */
+interface ObjForm {
+  daily_date: string; daily_goal: string;
+  week_start: string; week_end: string; weekly_goal: string;
+  month_start: string; month_end: string; monthly_goal: string;
+}
+
+const OBJ_EMPTY: ObjForm = {
+  daily_date: "", daily_goal: "",
+  week_start: "", week_end: "", weekly_goal: "",
+  month_start: "", month_end: "", monthly_goal: "",
+};
+
+const OBJ_LABELS: Record<keyof ObjForm, string> = {
+  daily_date: "Fecha del día",
+  daily_goal: "Objetivo del día",
+  week_start: "Fecha inicio de semana",
+  week_end: "Fecha fin de semana",
+  weekly_goal: "Objetivo de la semana",
+  month_start: "Fecha inicio de mes",
+  month_end: "Fecha fin de mes",
+  monthly_goal: "Objetivo del mes",
+};
+
+function ObjSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="glass overflow-hidden rounded-2xl">
+      <div className="flex items-center gap-2 border-b border-border-subtle bg-bg-tertiary px-4 py-3">
+        <Target size={16} className="text-accent-blue" />
+        <h3 className="text-sm font-bold text-accent-blue">{title}</h3>
+      </div>
+      <div className="space-y-3 p-4">{children}</div>
+    </div>
+  );
+}
+
+function ObjetivosTab() {
+  const toast = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<ObjForm>(OBJ_EMPTY);
+  const [errors, setErrors] = useState<string[]>([]);
+  const set = (patch: Partial<ObjForm>) => setForm((f) => ({ ...f, ...patch }));
+
+  useEffect(() => {
+    api<{
+      daily_goal: number; daily_date: string | null; weekly_goal: number;
+      week_start: string | null; week_end: string | null;
+      monthly_goal: number; month_start: string | null; month_end: string | null;
+    }>("/api/settings/objectives")
+      .then((o) => {
+        // Postgres devuelve NUMERIC como string ("0.00"); 0 se trata como
+        // sin objetivo (campo vacío) para que sea obligatorio diligenciarlo.
+        const goal = (v: number) => (Number(v) ? String(Number(v)) : "");
+        setForm({
+          daily_date: o.daily_date ?? "",
+          daily_goal: goal(o.daily_goal),
+          week_start: o.week_start ?? "",
+          week_end: o.week_end ?? "",
+          weekly_goal: goal(o.weekly_goal),
+          month_start: o.month_start ?? "",
+          month_end: o.month_end ?? "",
+          monthly_goal: goal(o.monthly_goal),
+        });
+      })
+      .catch((e) => toast("error", e instanceof ApiError ? e.message : "Error al cargar"))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  function validate(): string[] {
+    const errs: string[] = [];
+    const missing = (Object.keys(OBJ_LABELS) as (keyof ObjForm)[])
+      .filter((k) => form[k] === "" || form[k] == null);
+    if (missing.length) {
+      errs.push("Los valores deben ser diligenciados correctamente.");
+      for (const k of missing) errs.push(`${OBJ_LABELS[k]}: campo obligatorio.`);
+    }
+    const todayISO = new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd local
+    if (form.daily_date && form.daily_date < todayISO) {
+      errs.push("La fecha del día no puede ser menor a la fecha actual.");
+    }
+    if (form.week_start && form.week_end && form.week_end < form.week_start) {
+      errs.push("La fecha fin de semana no puede ser menor a la fecha inicio.");
+    }
+    if (form.month_start && form.month_end && form.month_end < form.month_start) {
+      errs.push("La fecha fin de mes no puede ser menor a la fecha inicio.");
+    }
+    return errs;
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const errs = validate();
+    if (errs.length) { setErrors(errs); return; }
+    setSaving(true);
+    try {
+      await api("/api/settings/objectives", {
+        method: "PUT",
+        body: {
+          daily_date: form.daily_date,
+          daily_goal: Number(form.daily_goal),
+          week_start: form.week_start,
+          week_end: form.week_end,
+          weekly_goal: Number(form.weekly_goal),
+          month_start: form.month_start,
+          month_end: form.month_end,
+          monthly_goal: Number(form.monthly_goal),
+        },
+      });
+      toast("success", "Objetivos guardados correctamente.");
+    } catch (err) {
+      const payload = err instanceof ApiError ? (err.payload as { errors?: string[] }) : null;
+      if (payload && Array.isArray(payload.errors)) {
+        setErrors(payload.errors);
+      } else {
+        toast("error", err instanceof ApiError ? err.message : "Error al guardar");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <Loader label="Cargando objetivos" />;
+
+  return (
+    <form onSubmit={save} className="max-w-3xl space-y-5">
+      <ObjSection title="Objetivo diario">
+        <FormRow label="Fecha del día" required>
+          <Input type="date" value={form.daily_date}
+            onChange={(e) => set({ daily_date: e.target.value })} />
+        </FormRow>
+        <FormRow label="Objetivo del día" required>
+          <MoneyInput value={form.daily_goal}
+            onValueChange={(v) => set({ daily_goal: v })} />
+        </FormRow>
+      </ObjSection>
+
+      <ObjSection title="Objetivo semanal">
+        <FormRow label="Fecha inicio de semana" required>
+          <Input type="date" value={form.week_start}
+            onChange={(e) => set({ week_start: e.target.value })} />
+        </FormRow>
+        <FormRow label="Fecha fin de semana" required>
+          <Input type="date" value={form.week_end}
+            onChange={(e) => set({ week_end: e.target.value })} />
+        </FormRow>
+        <FormRow label="Objetivo de la semana" required>
+          <MoneyInput value={form.weekly_goal}
+            onValueChange={(v) => set({ weekly_goal: v })} />
+        </FormRow>
+      </ObjSection>
+
+      <ObjSection title="Objetivo mensual">
+        <FormRow label="Fecha inicio de mes" required>
+          <Input type="date" value={form.month_start}
+            onChange={(e) => set({ month_start: e.target.value })} />
+        </FormRow>
+        <FormRow label="Fecha fin de mes" required>
+          <Input type="date" value={form.month_end}
+            onChange={(e) => set({ month_end: e.target.value })} />
+        </FormRow>
+        <FormRow label="Objetivo del mes" required>
+          <MoneyInput value={form.monthly_goal}
+            onValueChange={(v) => set({ monthly_goal: v })} />
+        </FormRow>
+      </ObjSection>
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-text-muted">
+          <span className="text-accent-rose">*</span> Campos obligatorios
+        </p>
+        <Button type="submit" disabled={saving}>
+          {saving ? "Guardando…" : "Guardar"}
+        </Button>
+      </div>
+
+      {/* Diálogo de validación (réplica del de Polaris, mensajes corregidos) */}
+      <Modal open={errors.length > 0} title="Revise los datos"
+        onClose={() => setErrors([])}>
+        <div className="mb-5 flex flex-col items-center text-center">
+          <XCircle size={48} className="mb-3 text-accent-rose" />
+          <div className="space-y-1 text-sm text-text-secondary">
+            {errors.map((msg, i) => <p key={i}>{msg}</p>)}
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <Button onClick={() => setErrors([])}>Aceptar</Button>
+        </div>
+      </Modal>
+    </form>
   );
 }
 
@@ -147,15 +347,14 @@ function PrioridadMenuTab() {
       toast("error", "Seleccione al menos un día de la semana.");
       return;
     }
-    // Prefill: favoritas comunes a TODOS los días seleccionados (intersección),
-    // conservando el orden del primer día que las tenga. Con un solo día =
-    // sus favoritas; con varios días distintos = vacío (asignación nueva).
-    const ordered = selectedDays
-      .map((d) => priority[d] ?? [])
-      .find((arr) => arr.length > 0) ?? [];
-    const common = ordered.filter((catId) =>
-      selectedDays.every((d) => (priority[d] ?? []).includes(catId)));
-    setFavoritas(common);
+    // Polaris: con UN solo día se precargan sus favoritas actuales; con
+    // VARIOS días se inicia vacío (todas en disponibles), sin importar lo
+    // que cada día tenga configurado — es una asignación nueva que, al
+    // guardar, sobreescribe a todos los días seleccionados.
+    const prefill = selectedDays.length === 1
+      ? (priority[selectedDays[0]] ?? [])
+      : [];
+    setFavoritas(prefill);
     setAvailSel(null);
     setFavSel(null);
     setStep("categories");
@@ -285,34 +484,19 @@ function PrioridadMenuTab() {
                   className="h-4 w-4 accent-[var(--color-accent-blue)]" />
               </th>
               <th className="px-4 py-3 font-medium">Día de la semana</th>
-              <th className="px-4 py-3 font-medium">Categorías favoritas</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle/60">
-            {WEEKDAYS.map((w) => {
-              const favs = priority[w.value] ?? [];
-              return (
-                <tr key={w.value} className="transition hover:bg-bg-tertiary/40">
-                  <td className="px-4 py-2.5">
-                    <input type="checkbox" checked={selectedDays.includes(w.value)}
-                      onChange={() => toggleDay(w.value)} aria-label={w.label}
-                      className="h-4 w-4 accent-[var(--color-accent-blue)]" />
-                  </td>
-                  <td className="px-4 py-2.5 font-medium">{w.label}</td>
-                  <td className="px-4 py-2.5">
-                    {favs.length === 0 ? (
-                      <span className="text-text-muted">Todas las categorías</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {favs.map((id) => (
-                          <Badge key={id} color="blue">{catName.get(id) ?? id}</Badge>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {WEEKDAYS.map((w) => (
+              <tr key={w.value} className="transition hover:bg-bg-tertiary/40">
+                <td className="px-4 py-2.5">
+                  <input type="checkbox" checked={selectedDays.includes(w.value)}
+                    onChange={() => toggleDay(w.value)} aria-label={w.label}
+                    className="h-4 w-4 accent-[var(--color-accent-blue)]" />
+                </td>
+                <td className="px-4 py-2.5 font-medium">{w.label}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -370,80 +554,175 @@ function ArrowBtn({ label, onClick, disabled, children }: {
   );
 }
 
-/* ───────── Métodos de pago (§1.7.7): solo estado + bancos ───────── */
+/* ───────── Métodos de pago (§1.7.7) — réplica de Polaris form_tb_pay_methods.
+   Grid de los métodos fijos del establecimiento: estado Activo/Inactivo por
+   método y, solo para TRANSFERENCIA, los bancos asociados. Un único "Guardar"
+   persiste todos los cambios; "Salir" descarta los cambios sin guardar. */
+interface PayMethod {
+  id: number; name: string; is_active: boolean; is_legacy: boolean; bank_ids: number[];
+}
+interface PayDraft { is_active: boolean; bank_ids: number[] }
+
 function PaymentMethodsTab() {
   const toast = useToast();
-  const [methods, setMethods] = useState<{
-    id: number; name: string; is_active: boolean; is_legacy: boolean; bank_ids: number[];
-  }[]>([]);
+  const [methods, setMethods] = useState<PayMethod[]>([]);
   const [banks, setBanks] = useState<{ id: number; name: string }[]>([]);
+  const [draft, setDraft] = useState<Record<number, PayDraft>>({});
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
-    api<typeof methods>("/api/settings/payment-methods").then(setMethods).catch(() => {});
-    api<typeof banks>("/api/catalogs/banks").then(setBanks).catch(() => {});
-  }, []);
+    Promise.all([
+      api<PayMethod[]>("/api/settings/payment-methods"),
+      api<{ id: number; name: string }[]>("/api/catalogs/banks"),
+    ])
+      .then(([ms, bs]) => {
+        setMethods(ms);
+        setBanks(bs);
+        const d: Record<number, PayDraft> = {};
+        for (const m of ms) d[m.id] = { is_active: m.is_active, bank_ids: m.bank_ids };
+        setDraft(d);
+      })
+      .catch((e) => toast("error", e instanceof ApiError ? e.message : "Error al cargar"))
+      .finally(() => setLoading(false));
+  }, [toast]);
   useEffect(load, [load]);
 
-  async function save(m: (typeof methods)[number], changes: Partial<(typeof methods)[number]>) {
+  const filtered = useMemo(
+    () => methods.filter((m) => m.name.toLowerCase().includes(search.trim().toLowerCase())),
+    [methods, search],
+  );
+  const { slice, bar } = usePagination(filtered);
+
+  function setActive(id: number, value: boolean) {
+    setDraft((d) => ({ ...d, [id]: { ...d[id], is_active: value } }));
+  }
+  function toggleBank(id: number, bankId: number) {
+    setDraft((d) => {
+      const cur = d[id];
+      const has = cur.bank_ids.includes(bankId);
+      return { ...d, [id]: { ...cur, bank_ids: has
+        ? cur.bank_ids.filter((x) => x !== bankId)
+        : [...cur.bank_ids, bankId] } };
+    });
+  }
+
+  async function save() {
+    setSaving(true);
     try {
-      await api(`/api/settings/payment-methods/${m.id}`, {
+      await api("/api/settings/payment-methods", {
         method: "PUT",
         body: {
-          is_active: changes.is_active ?? m.is_active,
-          bank_ids: changes.bank_ids ?? m.bank_ids,
+          methods: methods.map((m) => ({
+            id: m.id,
+            is_active: draft[m.id].is_active,
+            // los bancos solo aplican a TRANSFERENCIA
+            bank_ids: m.name === "TRANSFERENCIA" ? draft[m.id].bank_ids : [],
+          })),
         },
       });
-      toast("success", "Método de pago actualizado correctamente");
+      toast("success", "Métodos de pago guardados correctamente");
       load();
     } catch (e) {
-      toast("error", e instanceof ApiError ? e.message : "Error al actualizar");
+      toast("error", e instanceof ApiError ? e.message : "Error al guardar");
+    } finally {
+      setSaving(false);
     }
   }
 
+  // "Salir" (como Polaris): descarta los cambios sin guardar.
+  function salir() {
+    const d: Record<number, PayDraft> = {};
+    for (const m of methods) d[m.id] = { is_active: m.is_active, bank_ids: m.bank_ids };
+    setDraft(d);
+    setSearch("");
+  }
+
+  if (loading) return <Loader label="Cargando métodos de pago" />;
+
   return (
-    <div className="max-w-2xl space-y-3">
-      {methods.map((m) => (
-        <div key={m.id} className="glass rounded-2xl p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">{m.name}</p>
-              {m.is_legacy && <Badge color="gray">Fase 4 (no documentado en el manual)</Badge>}
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={m.is_active}
-                onChange={(e) => save(m, { is_active: e.target.checked })}
-                className="h-4 w-4 accent-[var(--color-accent-blue)]" />
-              {m.is_active ? "Activo" : "Inactivo"}
-            </label>
-          </div>
-          {m.name === "TRANSFERENCIA" && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {banks.map((b) => {
-                const assoc = m.bank_ids.includes(b.id);
-                return (
-                  <button key={b.id}
-                    onClick={() => save(m, {
-                      bank_ids: assoc
-                        ? m.bank_ids.filter((x) => x !== b.id)
-                        : [...m.bank_ids, b.id],
-                    })}
-                    className={`rounded-full px-3 py-1 text-xs transition ${
-                      assoc ? "bg-accent-blue/25 font-medium text-accent-blue"
-                        : "bg-bg-tertiary text-text-secondary hover:text-text-primary"
-                    }`}>
-                    {b.name}
-                  </button>
-                );
-              })}
-              {banks.length === 0 && (
-                <p className="text-xs text-text-muted">
-                  Cree bancos en la pestaña "Bancos para transferencia".
-                </p>
-              )}
-            </div>
-          )}
+    <div className="fade-in-up max-w-4xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Input placeholder="Búsqueda Rápida" value={search}
+          onChange={(e) => setSearch(e.target.value)} className="!w-64" />
+        <div className="flex gap-2">
+          <Button onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>
+          <Button variant="ghost" onClick={salir}>Salir</Button>
         </div>
-      ))}
+      </div>
+
+      <div className="glass overflow-hidden rounded-2xl">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border-medium bg-bg-tertiary/60 text-left text-xs uppercase tracking-wide text-text-secondary">
+              <th className="w-12 px-4 py-3 font-medium">#</th>
+              <th className="px-4 py-3 font-medium">Método de pago</th>
+              <th className="px-4 py-3 font-medium">Bancos</th>
+              <th className="px-4 py-3 font-medium">Estado del pago</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle/60">
+            {slice.map((m) => {
+              const dr = draft[m.id];
+              return (
+                <tr key={m.id} className="align-top transition hover:bg-bg-tertiary/40">
+                  <td className="px-4 py-3 text-text-muted">{methods.indexOf(m) + 1}</td>
+                  <td className="px-4 py-3 font-medium">{m.name}</td>
+                  <td className="px-4 py-3">
+                    {m.name !== "TRANSFERENCIA" ? (
+                      <span className="text-text-muted">—</span>
+                    ) : banks.length === 0 ? (
+                      <p className="text-xs text-text-muted">
+                        Cree bancos en "Bancos para transferencia".
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {banks.map((b) => {
+                          const on = dr.bank_ids.includes(b.id);
+                          return (
+                            <button key={b.id} type="button" onClick={() => toggleBank(m.id, b.id)}
+                              className={`rounded-full px-3 py-1 text-xs transition ${
+                                on ? "bg-accent-blue/25 font-medium text-accent-blue"
+                                  : "bg-bg-tertiary text-text-secondary hover:text-text-primary"
+                              }`}>
+                              {b.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-4 text-sm">
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" name={`pay_status_${m.id}`} checked={dr.is_active}
+                          onChange={() => setActive(m.id, true)}
+                          className="h-4 w-4 accent-[var(--color-accent-blue)]" />
+                        Activo
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" name={`pay_status_${m.id}`} checked={!dr.is_active}
+                          onChange={() => setActive(m.id, false)}
+                          className="h-4 w-4 accent-[var(--color-accent-blue)]" />
+                        Inactivo
+                      </label>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {slice.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-10 text-center text-text-muted">
+                  No hay registros para mostrar
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {bar}
     </div>
   );
 }

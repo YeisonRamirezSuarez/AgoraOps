@@ -218,12 +218,14 @@ ordersRouter.put("/:id/delivery", async (req, res) => {
   res.json({ ok: true, message: "Cliente asignado correctamente" });
 });
 
-/** Impresoras activas para comanda/prefactura (Polaris: printersComanda y
- * printersPrefactura embebidas en la pantalla de orden). */
+/** Impresoras activas para impresión (resolución por ENDPOINT). Disponible
+ * para cualquier usuario autenticado (no solo admin), porque cajeros/meseros
+ * imprimen. Incluye endpoint y paper_width para que el servicio local arme la
+ * tirilla al ancho correcto de cada impresora. */
 ordersRouter.get("/printers/list", async (req, res) => {
   const rows = await query(
-    `SELECT id, name, connection_type, device_name AS printer_name,
-            ip_address, port, purpose, url_send
+    `SELECT id, name, connection_type, device_name,
+            ip_address, port, endpoint, paper_width, location, is_active
      FROM printers WHERE tenant_id = $1 AND is_active ORDER BY name`,
     [req.user!.tenantId],
   );

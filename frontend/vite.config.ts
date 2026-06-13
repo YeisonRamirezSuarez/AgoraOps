@@ -41,6 +41,8 @@ export default defineConfig({
     proxy: {
       // En desarrollo el API corre en :4000; en producción usar VITE_API_URL
       "/api": "http://localhost:4000",
+      // Descargas del servicio de impresión (estático del backend, §1.8.5)
+      "/print-service": "http://localhost:4000",
     },
   },
 });

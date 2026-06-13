@@ -188,6 +188,10 @@ const createSchema = z.object({
   facebook: z.string().nullish(),
   instagram: z.string().nullish(),
   themePalette: z.enum(PALETTES).default("celeste"),
+  // Moneda (nacional/internacional). Si no se envían, se derivan del país.
+  currencyCode: z.string().min(1).max(8).optional(),
+  currencySymbol: z.string().min(1).max(4).optional(),
+  currencyDecimals: z.union([z.literal(0), z.literal(2)]).optional(),
   roomName: z.string().min(1).default("Sala Principal"),
   tablesCount: z.number().int().min(0).max(200).default(5),
   cashRegisterName: z.string().min(1).default("Caja Principal"),
@@ -224,14 +228,23 @@ superadminRouter.post("/tenants", async (req, res) => {
   const password = tempPassword();
   const hash = await bcrypt.hash(password, 10);
 
+  // Moneda: default por país (CO → COP/$/0, EC → USD/$/2) salvo override.
+  const currency = {
+    code: d.currencyCode ?? (d.country === "EC" ? "USD" : "COP"),
+    symbol: d.currencySymbol ?? "$",
+    decimals: d.currencyDecimals ?? (d.country === "EC" ? 2 : 0),
+  };
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const tenant = (await client.query(
-      `INSERT INTO tenants (name, slug, country, timezone)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [d.name, d.slug, d.country, d.timezone],
+      `INSERT INTO tenants (name, slug, country, timezone,
+         currency_code, currency_symbol, currency_decimals)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [d.name, d.slug, d.country, d.timezone,
+       currency.code, currency.symbol, currency.decimals],
     )).rows[0];
 
     await client.query(
@@ -270,8 +283,10 @@ superadminRouter.post("/tenants", async (req, res) => {
     await client.query(
       `INSERT INTO payment_methods (tenant_id, name, is_active, is_legacy) VALUES
          ($1, 'EFECTIVO', true, false),
+         ($1, 'TARJETA', true, false),
          ($1, 'TRANSFERENCIA', true, false),
-         ($1, 'CUENTA POR COBRAR', true, false)`,
+         ($1, 'VENTA A CREDITO', true, false),
+         ($1, 'COMBINADO', true, false)`,
       [tenant.id],
     );
 
@@ -338,9 +353,14 @@ superadminRouter.put("/tenants/:id", async (req, res) => {
       `UPDATE tenants SET
          name = COALESCE($2, name),
          country = COALESCE($3, country),
-         timezone = COALESCE($4, timezone)
+         timezone = COALESCE($4, timezone),
+         currency_code = COALESCE($5, currency_code),
+         currency_symbol = COALESCE($6, currency_symbol),
+         currency_decimals = COALESCE($7, currency_decimals)
        WHERE id = $1 RETURNING *`,
-      [req.params.id, d.name ?? null, d.country ?? null, d.timezone ?? null],
+      [req.params.id, d.name ?? null, d.country ?? null, d.timezone ?? null,
+       d.currencyCode ?? null, d.currencySymbol ?? null,
+       d.currencyDecimals ?? null],
     );
     if (!tenant) {
       res.status(404).json({ error: "Establecimiento no encontrado" });

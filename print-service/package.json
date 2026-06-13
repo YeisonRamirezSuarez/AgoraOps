@@ -1,0 +1,22 @@
+{
+  "name": "agoraops-print-service",
+  "version": "1.0.0",
+  "description": "Servicio local de impresión de AgoraOps (POS): detecta impresoras del equipo, imprime tirillas ESC/POS (USB/Red/Bluetooth) y abre el cajón monedero. Hace de puente entre la web app y las impresoras físicas. Réplica del contrato de Polaris (http://localhost:9090).",
+  "main": "src/server.js",
+  "bin": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "build:win": "pkg . --targets node18-win-x64 --output dist/AgoraOpsPrintService.exe"
+  },
+  "pkg": {
+    "assets": ["assets/**/*"],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  }
+}
