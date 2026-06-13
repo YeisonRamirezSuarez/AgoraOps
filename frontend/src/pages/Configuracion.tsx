@@ -12,6 +12,7 @@ import { api, ApiError } from "../lib/api";
 import { CrudPage } from "../components/CrudPage";
 import { SalaGrid } from "../components/SalaGrid";
 import { MesasGrid } from "../components/MesasGrid";
+import { HorariosCalendar } from "../components/HorariosCalendar";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
 import { Badge, Button, Loader, PageHeader, Table, useToast } from "../components/ui";
@@ -53,10 +54,7 @@ export default function Configuracion() {
         </div>
       )}
 
-      {tab === "Horarios" && (
-        <EnConstruccion titulo="Horarios de trabajadores"
-          nota="Calendario día/semana/mes con asignación de franjas a usuarios (manual §1.7.4) — Fase 3 del roadmap." />
-      )}
+      {tab === "Horarios" && <HorariosCalendar />}
       {tab === "Objetivos" && (
         <EnConstruccion titulo="Objetivos de ventas"
           nota="Metas diaria, semanal y mensual visibles en el Dashboard (manual §1.7.5) — Fase 3 del roadmap." />
