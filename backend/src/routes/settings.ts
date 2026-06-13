@@ -17,16 +17,23 @@ export const settingsRouter = Router();
  * Registrado ANTES del guard de administrador: lo necesita cualquier
  * usuario autenticado para aplicar el tema al iniciar sesión. */
 settingsRouter.get("/branding", requireAuth, async (req, res) => {
+  const fallback = {
+    business_name: null, logo_url: null, theme_palette: "celeste",
+    currency_code: "COP", currency_symbol: "$", currency_decimals: 0,
+  };
   if (!req.user!.tenantId) {
-    res.json({ business_name: null, logo_url: null, theme_palette: "celeste" });
+    res.json(fallback);
     return;
   }
   const row = await queryOne(
-    `SELECT business_name, logo_url, theme_palette
-     FROM business_settings WHERE tenant_id = $1`,
+    `SELECT bs.business_name, bs.logo_url, bs.theme_palette,
+            t.currency_code, t.currency_symbol, t.currency_decimals
+     FROM business_settings bs
+     JOIN tenants t ON t.id = bs.tenant_id
+     WHERE bs.tenant_id = $1`,
     [req.user!.tenantId],
   );
-  res.json(row ?? { business_name: null, logo_url: null, theme_palette: "celeste" });
+  res.json(row ?? fallback);
 });
 
 settingsRouter.use(requireAuth, requireAdmin);
@@ -188,6 +195,105 @@ settingsRouter.put("/menu-priority", async (req, res) => {
       }
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+/**
+ * Objetivos de venta (§1.7.5) — réplica de Polaris form_tb_objetive.
+ * Un único registro por establecimiento con las metas y fechas diaria,
+ * semanal y mensual. El Dashboard usa estas fechas como rango de facturado.
+ * Validaciones verificadas en Polaris (mensajes corregidos):
+ *   · los 8 campos son obligatorios;
+ *   · la fecha del día no puede ser menor a la fecha actual;
+ *   · la fecha fin de semana/mes no puede ser menor a su fecha inicio.
+ */
+const OBJ_LABELS: Record<string, string> = {
+  daily_date: "Fecha del día",
+  daily_goal: "Objetivo del día",
+  week_start: "Fecha inicio de semana",
+  week_end: "Fecha fin de semana",
+  weekly_goal: "Objetivo de la semana",
+  month_start: "Fecha inicio de mes",
+  month_end: "Fecha fin de mes",
+  monthly_goal: "Objetivo del mes",
+};
+
+settingsRouter.get("/objectives", async (req, res) => {
+  const row = await queryOne(
+    `SELECT daily_goal, daily_date::text, weekly_goal,
+            week_start::text, week_end::text,
+            monthly_goal, month_start::text, month_end::text
+     FROM objectives WHERE tenant_id = $1`,
+    [req.user!.tenantId],
+  );
+  res.json(row ?? {
+    daily_goal: 0, daily_date: null, weekly_goal: 0,
+    week_start: null, week_end: null,
+    monthly_goal: 0, month_start: null, month_end: null,
+  });
+});
+
+settingsRouter.put("/objectives", async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const isEmpty = (v: unknown) =>
+    v === null || v === undefined || v === "" ||
+    (typeof v === "number" && Number.isNaN(v));
+  const num = (v: unknown) => (isEmpty(v) ? NaN : Number(v));
+
+  const errors: string[] = [];
+  const missing = Object.keys(OBJ_LABELS).filter((k) => {
+    const v = b[k];
+    return k.endsWith("_goal") ? Number.isNaN(num(v)) : isEmpty(v);
+  });
+  if (missing.length) {
+    errors.push("Los valores deben ser diligenciados correctamente.");
+    for (const k of missing) errors.push(`${OBJ_LABELS[k]}: campo obligatorio.`);
+  }
+
+  const dailyDate = b.daily_date as string | undefined;
+  const weekStart = b.week_start as string | undefined;
+  const weekEnd = b.week_end as string | undefined;
+  const monthStart = b.month_start as string | undefined;
+  const monthEnd = b.month_end as string | undefined;
+  const todayISO = new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd local
+
+  if (dailyDate && dailyDate < todayISO) {
+    errors.push("La fecha del día no puede ser menor a la fecha actual.");
+  }
+  if (weekStart && weekEnd && weekEnd < weekStart) {
+    errors.push("La fecha fin de semana no puede ser menor a la fecha inicio.");
+  }
+  if (monthStart && monthEnd && monthEnd < monthStart) {
+    errors.push("La fecha fin de mes no puede ser menor a la fecha inicio.");
+  }
+
+  if (errors.length) {
+    res.status(400).json({ error: errors.join("\n"), errors });
+    return;
+  }
+
+  try {
+    const row = await queryOne(
+      `INSERT INTO objectives
+         (tenant_id, daily_goal, daily_date, weekly_goal, week_start, week_end,
+          monthly_goal, month_start, month_end)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (tenant_id) DO UPDATE SET
+         daily_goal = EXCLUDED.daily_goal, daily_date = EXCLUDED.daily_date,
+         weekly_goal = EXCLUDED.weekly_goal, week_start = EXCLUDED.week_start,
+         week_end = EXCLUDED.week_end, monthly_goal = EXCLUDED.monthly_goal,
+         month_start = EXCLUDED.month_start, month_end = EXCLUDED.month_end
+       RETURNING daily_goal, daily_date::text, weekly_goal, week_start::text,
+                 week_end::text, monthly_goal, month_start::text, month_end::text`,
+      [
+        req.user!.tenantId,
+        num(b.daily_goal), dailyDate, num(b.weekly_goal), weekStart, weekEnd,
+        num(b.monthly_goal), monthStart, monthEnd,
+      ],
+    );
+    res.json(row);
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });
   }

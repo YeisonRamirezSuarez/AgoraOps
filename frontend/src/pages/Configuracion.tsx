@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp,
+  Target, XCircle,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { CrudPage } from "../components/CrudPage";
@@ -15,7 +16,10 @@ import { MesasGrid } from "../components/MesasGrid";
 import { HorariosCalendar } from "../components/HorariosCalendar";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
-import { Badge, Button, Loader, PageHeader, Table, useToast } from "../components/ui";
+import {
+  Badge, Button, FormRow, Input, Loader, Modal, MoneyInput, PageHeader,
+  Table, useToast,
+} from "../components/ui";
 
 const TABS = [
   "Sala del restaurante", "Mesas del restaurante", "Etapas de reserva",
@@ -55,10 +59,7 @@ export default function Configuracion() {
       )}
 
       {tab === "Horarios" && <HorariosCalendar />}
-      {tab === "Objetivos" && (
-        <EnConstruccion titulo="Objetivos de ventas"
-          nota="Metas diaria, semanal y mensual visibles en el Dashboard (manual §1.7.5) — Fase 3 del roadmap." />
-      )}
+      {tab === "Objetivos" && <ObjetivosTab />}
       {tab === "Prioridad del menú" && <PrioridadMenuTab />}
 
       {tab === "Métodos de pago" && <PaymentMethodsTab />}
@@ -84,6 +85,200 @@ export default function Configuracion() {
           nota="Submódulo nuevo (no documentado en el manual v18) — pendiente de definición de requisitos." />
       )}
     </div>
+  );
+}
+
+/* ───────── Objetivos (§1.7.5) — réplica de Polaris form_tb_objetive ─────────
+   Registro único por establecimiento con las metas y fechas diaria, semanal
+   y mensual. El Dashboard usa estas fechas como rango de facturado. Las
+   validaciones replican Polaris (mensajes corregidos):
+     · los 8 campos son obligatorios;
+     · la fecha del día no puede ser menor a la fecha actual;
+     · la fecha fin de semana/mes no puede ser menor a su fecha inicio. */
+interface ObjForm {
+  daily_date: string; daily_goal: string;
+  week_start: string; week_end: string; weekly_goal: string;
+  month_start: string; month_end: string; monthly_goal: string;
+}
+
+const OBJ_EMPTY: ObjForm = {
+  daily_date: "", daily_goal: "",
+  week_start: "", week_end: "", weekly_goal: "",
+  month_start: "", month_end: "", monthly_goal: "",
+};
+
+const OBJ_LABELS: Record<keyof ObjForm, string> = {
+  daily_date: "Fecha del día",
+  daily_goal: "Objetivo del día",
+  week_start: "Fecha inicio de semana",
+  week_end: "Fecha fin de semana",
+  weekly_goal: "Objetivo de la semana",
+  month_start: "Fecha inicio de mes",
+  month_end: "Fecha fin de mes",
+  monthly_goal: "Objetivo del mes",
+};
+
+function ObjSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="glass overflow-hidden rounded-2xl">
+      <div className="flex items-center gap-2 border-b border-border-subtle bg-bg-tertiary px-4 py-3">
+        <Target size={16} className="text-accent-blue" />
+        <h3 className="text-sm font-bold text-accent-blue">{title}</h3>
+      </div>
+      <div className="space-y-3 p-4">{children}</div>
+    </div>
+  );
+}
+
+function ObjetivosTab() {
+  const toast = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<ObjForm>(OBJ_EMPTY);
+  const [errors, setErrors] = useState<string[]>([]);
+  const set = (patch: Partial<ObjForm>) => setForm((f) => ({ ...f, ...patch }));
+
+  useEffect(() => {
+    api<{
+      daily_goal: number; daily_date: string | null; weekly_goal: number;
+      week_start: string | null; week_end: string | null;
+      monthly_goal: number; month_start: string | null; month_end: string | null;
+    }>("/api/settings/objectives")
+      .then((o) => setForm({
+        daily_date: o.daily_date ?? "",
+        daily_goal: o.daily_goal ? String(o.daily_goal) : "",
+        week_start: o.week_start ?? "",
+        week_end: o.week_end ?? "",
+        weekly_goal: o.weekly_goal ? String(o.weekly_goal) : "",
+        month_start: o.month_start ?? "",
+        month_end: o.month_end ?? "",
+        monthly_goal: o.monthly_goal ? String(o.monthly_goal) : "",
+      }))
+      .catch((e) => toast("error", e instanceof ApiError ? e.message : "Error al cargar"))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  function validate(): string[] {
+    const errs: string[] = [];
+    const missing = (Object.keys(OBJ_LABELS) as (keyof ObjForm)[])
+      .filter((k) => form[k] === "" || form[k] == null);
+    if (missing.length) {
+      errs.push("Los valores deben ser diligenciados correctamente.");
+      for (const k of missing) errs.push(`${OBJ_LABELS[k]}: campo obligatorio.`);
+    }
+    const todayISO = new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd local
+    if (form.daily_date && form.daily_date < todayISO) {
+      errs.push("La fecha del día no puede ser menor a la fecha actual.");
+    }
+    if (form.week_start && form.week_end && form.week_end < form.week_start) {
+      errs.push("La fecha fin de semana no puede ser menor a la fecha inicio.");
+    }
+    if (form.month_start && form.month_end && form.month_end < form.month_start) {
+      errs.push("La fecha fin de mes no puede ser menor a la fecha inicio.");
+    }
+    return errs;
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const errs = validate();
+    if (errs.length) { setErrors(errs); return; }
+    setSaving(true);
+    try {
+      await api("/api/settings/objectives", {
+        method: "PUT",
+        body: {
+          daily_date: form.daily_date,
+          daily_goal: Number(form.daily_goal),
+          week_start: form.week_start,
+          week_end: form.week_end,
+          weekly_goal: Number(form.weekly_goal),
+          month_start: form.month_start,
+          month_end: form.month_end,
+          monthly_goal: Number(form.monthly_goal),
+        },
+      });
+      toast("success", "Objetivos guardados correctamente.");
+    } catch (err) {
+      const payload = err instanceof ApiError ? (err.payload as { errors?: string[] }) : null;
+      if (payload && Array.isArray(payload.errors)) {
+        setErrors(payload.errors);
+      } else {
+        toast("error", err instanceof ApiError ? err.message : "Error al guardar");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <Loader label="Cargando objetivos" />;
+
+  return (
+    <form onSubmit={save} className="max-w-3xl space-y-5">
+      <ObjSection title="Objetivo diario">
+        <FormRow label="Fecha del día" required>
+          <Input type="date" value={form.daily_date}
+            onChange={(e) => set({ daily_date: e.target.value })} />
+        </FormRow>
+        <FormRow label="Objetivo del día" required>
+          <MoneyInput value={form.daily_goal}
+            onValueChange={(v) => set({ daily_goal: v })} />
+        </FormRow>
+      </ObjSection>
+
+      <ObjSection title="Objetivo semanal">
+        <FormRow label="Fecha inicio de semana" required>
+          <Input type="date" value={form.week_start}
+            onChange={(e) => set({ week_start: e.target.value })} />
+        </FormRow>
+        <FormRow label="Fecha fin de semana" required>
+          <Input type="date" value={form.week_end}
+            onChange={(e) => set({ week_end: e.target.value })} />
+        </FormRow>
+        <FormRow label="Objetivo de la semana" required>
+          <MoneyInput value={form.weekly_goal}
+            onValueChange={(v) => set({ weekly_goal: v })} />
+        </FormRow>
+      </ObjSection>
+
+      <ObjSection title="Objetivo mensual">
+        <FormRow label="Fecha inicio de mes" required>
+          <Input type="date" value={form.month_start}
+            onChange={(e) => set({ month_start: e.target.value })} />
+        </FormRow>
+        <FormRow label="Fecha fin de mes" required>
+          <Input type="date" value={form.month_end}
+            onChange={(e) => set({ month_end: e.target.value })} />
+        </FormRow>
+        <FormRow label="Objetivo del mes" required>
+          <MoneyInput value={form.monthly_goal}
+            onValueChange={(v) => set({ monthly_goal: v })} />
+        </FormRow>
+      </ObjSection>
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-text-muted">
+          <span className="text-accent-rose">*</span> Campos obligatorios
+        </p>
+        <Button type="submit" disabled={saving}>
+          {saving ? "Guardando…" : "Guardar"}
+        </Button>
+      </div>
+
+      {/* Diálogo de validación (réplica del de Polaris, mensajes corregidos) */}
+      <Modal open={errors.length > 0} title="Revise los datos"
+        onClose={() => setErrors([])}>
+        <div className="mb-5 flex flex-col items-center text-center">
+          <XCircle size={48} className="mb-3 text-accent-rose" />
+          <div className="space-y-1 text-sm text-text-secondary">
+            {errors.map((msg, i) => <p key={i}>{msg}</p>)}
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <Button onClick={() => setErrors([])}>Aceptar</Button>
+        </div>
+      </Modal>
+    </form>
   );
 }
 
