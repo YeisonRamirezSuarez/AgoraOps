@@ -4,9 +4,10 @@
   "private": true,
   "description": "AgoraOps — POS SaaS para restaurantes y bares. backend/ y frontend/ son proyectos independientes (Vercel Root Directory).",
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev": "concurrently -n api,web,print -c blue,green,magenta \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\" \"npm start --prefix print-service\"",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
+    "dev:print": "npm start --prefix print-service",
     "db:migrate": "npm run db:migrate --prefix backend",
     "db:seed": "npm run db:seed --prefix backend",
     "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",

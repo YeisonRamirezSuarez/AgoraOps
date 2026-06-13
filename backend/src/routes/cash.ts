@@ -7,7 +7,6 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { readdirSync, statSync } from "node:fs";
 import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { query, queryOne } from "../db.js";
@@ -17,12 +16,20 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js";
 export const cashRouter = Router();
 cashRouter.use(requireAuth, requireAdmin);
 
-// Carpeta con los instaladores del servicio de impresión (servida estática
-// en /print-service desde index.ts). Resuelta relativa a la raíz de backend
-// (funciona tanto en src/ con tsx como en dist/).
+// Carpeta local con instaladores (fallback de desarrollo; servida estática en
+// /print-service desde index.ts). En producción el instalador se baja de un
+// GitHub Release (ver más abajo), no de aquí.
 export const INSTALLERS_DIR = join(
   dirname(fileURLToPath(import.meta.url)), "..", "..", "print-service-installers",
 );
+
+// El .exe del servicio de impresión NO se versiona ni se sube a Vercel: lo
+// compila GitHub Actions (.github/workflows/print-service.yml) y lo publica
+// como asset de un Release con tag fijo. La pantalla de descarga lista ese
+// Release vía la API pública de GitHub y enlaza directo al asset (la descarga
+// de ~15MB sale de GitHub, no del backend serverless).
+const GITHUB_REPO = process.env.GITHUB_REPO ?? "YeisonRamirezSuarez/AgoraOps";
+const PRINT_SERVICE_TAG = process.env.PRINT_SERVICE_TAG ?? "print-service";
 
 /** Aislamiento multi-tenant: toda ruta con :id opera sobre una sesión de
  * caja; se valida una vez que pertenezca al tenant del JWT antes de
@@ -43,28 +50,34 @@ cashRouter.param("id", (req, res, next, id) => {
 });
 
 /* ═══════════ Descargar servicio de impresión (§1.8.5) — réplica de Polaris
-   (blank_descarga_servicios): lista los instaladores disponibles en la
-   carpeta del servidor con su metadata. La descarga la sirve el estático
-   /print-service (index.ts). ═══════════ */
-cashRouter.get("/print-service", (_req, res) => {
-  let files: { name: string; size: number; type: string; date: string }[] = [];
+   (blank_descarga_servicios): lista el instalador del último GitHub Release
+   (compilado por CI) con su metadata y enlace directo de descarga. ═══════════ */
+interface InstallerFile { name: string; size: number; type: string; date: string; url: string; }
+
+cashRouter.get("/print-service", async (_req, res) => {
+  let files: InstallerFile[] = [];
   try {
-    files = readdirSync(INSTALLERS_DIR)
-      .filter((n) => !n.startsWith(".") && n.toLowerCase() !== "readme.md")
-      .map((name) => {
-        const st = statSync(join(INSTALLERS_DIR, name));
-        return st.isFile()
-          ? {
-              name,
-              size: st.size,
-              type: (extname(name).slice(1) || "—").toUpperCase(),
-              date: st.mtime.toISOString(),
-            }
-          : null;
-      })
-      .filter((f): f is NonNullable<typeof f> => f !== null);
+    const r = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${PRINT_SERVICE_TAG}`,
+      {
+        headers: { Accept: "application/vnd.github+json", "User-Agent": "AgoraOps" },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
+    if (r.ok) {
+      const rel = (await r.json()) as {
+        assets?: { name: string; size: number; updated_at: string; browser_download_url: string }[];
+      };
+      files = (rel.assets ?? []).map((a) => ({
+        name: a.name,
+        size: a.size,
+        type: (extname(a.name).slice(1) || "—").toUpperCase(),
+        date: a.updated_at,
+        url: a.browser_download_url,
+      }));
+    }
   } catch {
-    files = []; // carpeta inexistente → sin archivos
+    files = []; // sin Release aún o GitHub no disponible → sin archivos
   }
   const totalSize = files.reduce((s, f) => s + f.size, 0);
   res.json({ files, count: files.length, totalSize });

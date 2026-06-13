@@ -9,11 +9,13 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
-  ArrowLeft, CalendarCheck, Download, FileText, Info,
+  AlertTriangle, ArrowLeft, CalendarCheck, Download, FileText, Info,
   LogIn, LogOut, Pencil, Plus, Printer, Save, Search,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
-import { escHtml, printReceipt } from "../lib/printing";
+import {
+  type DocLine, fetchDetectedPrinters, openCashDrawer, printToEndpoint,
+} from "../lib/printing";
 import { CajasGrid } from "../components/CajasGrid";
 import { CrudPage } from "../components/CrudPage";
 import { DownloadPrintService } from "../components/DownloadPrintService";
@@ -58,32 +60,94 @@ export default function Cajas() {
       {tab === "Cajas" && <CajasGrid />}
       {tab === "Reporte de cajas" && <ReportTab />}
       {tab === "Descargar servicio de impresión" && <DownloadPrintService />}
-      {tab === "Configuración de impresoras" && (
-        <CrudPage title="impresora" endpoint="/api/catalogs/printers"
-          fields={[
-            { name: "name", label: "Nombre de impresora", required: true, immutable: true },
-            {
-              name: "connection_type", label: "Tipo de conexión", type: "select", required: true,
-              options: [{ value: "USB", label: "USB" }, { value: "ETHERNET", label: "ETHERNET" }],
-            },
-            // IP y Puerto solo cuando la conexión es ETHERNET (Polaris);
-            // USB usa el nombre del dispositivo
-            {
-              name: "ip_address", label: "IP", required: true,
-              visible: (d) => d.connection_type === "ETHERNET",
-            },
-            {
-              name: "port", label: "Puerto", type: "number", required: true, inTable: false,
-              visible: (d) => d.connection_type === "ETHERNET",
-            },
-            {
-              name: "device_name", label: "Nombre del dispositivo (USB)",
-              visible: (d) => d.connection_type === "USB",
-            },
-            { name: "location", label: "Ubicación", inTable: false },
-            { name: "is_active", label: "Estado", type: "checkbox" },
-          ]} />
+      {tab === "Configuración de impresoras" && <PrintersTab />}
+    </div>
+  );
+}
+
+/* ═════════════ Configuración de impresoras (§1.8.6, flujo Polaris) ═════════════
+   El nombre se ELIGE de las impresoras detectadas por el servicio local
+   (AgoraOpsPrintService en localhost:9090), no se escribe a mano. Si el
+   servicio no responde, se muestra el error y no se puede agregar (igual que
+   Polaris). Extensiones del cliente: Ancho de papel (58/80mm) y BLUETOOTH. */
+function PrintersTab() {
+  const toast = useToast();
+  const [detected, setDetected] = useState<{ value: string; label: string }[]>([]);
+  const [svcError, setSvcError] = useState(false);
+
+  useEffect(() => {
+    fetchDetectedPrinters()
+      .then((printers) => {
+        setDetected(printers.map((p) => ({ value: p.name, label: p.name })));
+        setSvcError(false);
+      })
+      .catch(() => {
+        setDetected([]);
+        setSvcError(true);
+        toast("error", "¡Error: AgoraOpsPrintService no responde!");
+      });
+  }, [toast]);
+
+  return (
+    <div className="fade-in-up">
+      {/* Solo se avisa cuando el servicio local no responde (igual que Polaris) */}
+      {svcError && (
+        <div className="mb-4 flex items-center gap-2 rounded-2xl border border-accent-rose/40 bg-accent-rose/10 px-4 py-3 text-sm text-accent-rose">
+          <AlertTriangle size={16} className="shrink-0" />
+          ¡Error: AgoraOpsPrintService no responde! Inicie el servicio de impresión para detectar impresoras.
+        </div>
       )}
+
+      <CrudPage title="impresora" endpoint="/api/catalogs/printers"
+        canCreate={!svcError}
+        fields={[
+          // Nombre = impresora detectada por el servicio (no editable a mano)
+          {
+            name: "name", label: "Nombre de impresora", type: "select",
+            required: true, immutable: true, options: detected,
+          },
+          {
+            name: "connection_type", label: "Tipo de conexión", type: "select", required: true,
+            options: [
+              { value: "USB", label: "USB" },
+              { value: "ETHERNET", label: "ETHERNET" },
+              { value: "BLUETOOTH", label: "BLUETOOTH" },
+            ],
+          },
+          // IP y Puerto solo cuando la conexión es ETHERNET (Polaris);
+          // USB/BLUETOOTH usan el nombre del dispositivo del SO
+          {
+            name: "ip_address", label: "IP", required: true,
+            visible: (d) => d.connection_type === "ETHERNET",
+          },
+          {
+            name: "port", label: "Puerto", type: "number", required: true, inTable: false,
+            visible: (d) => d.connection_type === "ETHERNET",
+          },
+          // Ancho de papel (extensión): el servicio de impresión arma la
+          // tirilla al número de columnas que tenga la impresora destino.
+          // Valores numéricos → la columna en BD es INT.
+          {
+            name: "paper_width", label: "Ancho de papel", type: "select", required: true,
+            options: [
+              { value: 80, label: "80 mm" },
+              { value: 58, label: "58 mm" },
+            ],
+          },
+          // Endpoint (rol): la misma impresora se registra una vez por
+          // endpoint, igual que Polaris.
+          {
+            name: "endpoint", label: "Endpoint", type: "select", required: true,
+            options: [
+              { value: "PAGO", label: "PAGO" },
+              { value: "PEDIDO", label: "PEDIDO" },
+              { value: "PREFACTURA", label: "PREFACTURA" },
+              { value: "CAJA", label: "CAJA" },
+            ],
+          },
+          { name: "is_active", label: "Estado", type: "checkbox", trueLabel: "Activo", falseLabel: "Inactivo" },
+          { name: "location", label: "Ubicación", inTable: false },
+        ]} />
     </div>
   );
 }
@@ -322,64 +386,53 @@ function summarizeCash(summary: Summary) {
   return { opening, income, expense, salesTotal, tipsTotal, cashSales, grandTotal, cashTotal };
 }
 
-/** Tirilla "REPORTE DE CIERRE DE CAJA" (formato Polaris). */
-function buildCashReportHtml(summary: Summary, counted: number | null) {
+/** Documento "REPORTE DE CIERRE DE CAJA" (formato Polaris). Se renderiza al
+ * ancho de la impresora del endpoint CAJA por el servicio local. */
+function buildCierreDoc(summary: Summary, counted: number | null): DocLine[] {
   const s = summary.session;
   const b = summary.business;
   const t = summarizeCash(summary);
-  const esc = escHtml;
   const money = (n: number) => cop.format(n);
-  const line = (l: string, v: string) =>
-    `<tr><td>${esc(l)}</td><td class="r">${esc(v)}</td></tr>`;
   const now = new Date();
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Reporte de Cierre de Caja</title>
-<style>
-  body{font-family:'Courier New',monospace;font-size:12px;width:320px;margin:0 auto;padding:12px;color:#000}
-  h1{font-size:13px;text-align:center;margin:0 0 6px}
-  h2{font-size:12px;text-align:center;margin:6px 0 2px;border-top:1px solid #000;padding-top:4px}
-  table{width:100%;border-collapse:collapse}
-  td{padding:1px 0;vertical-align:top}
-  .r{text-align:right}.b{font-weight:bold}
-  p{margin:1px 0}
-</style></head><body onload="window.print();window.onafterprint=()=>window.close()">
-<h1>REPORTE DE CIERRE DE CAJA</h1>
-<p><b>FECHA:</b> ${now.toLocaleDateString("es-CO")}</p>
-<p><b>HORA:</b> ${now.toLocaleTimeString("es-CO")}</p>
-<br>
-<p><b>CAJA:</b> ${esc(s.register_name)}</p>
-<p><b>RESPONSABLE:</b> ${esc(s.responsible_name ?? s.user_name ?? "—")}</p>
-<p><b>F DE APERTURA:</b> ${fmtDateTime(s.opened_at, "")}</p>
-<p><b>F DE CIERRE:</b> ${fmtDateTime(s.closed_at, "")}</p>
-<h2>ESTABLECIMIENTO</h2>
-<p><b>NOMBRE:</b> ${esc(b?.business_name ?? "AgoraOps")}</p>
-${b?.tax_id ? `<p><b>NIT:</b> ${esc(b.tax_id)}</p>` : ""}
-${b?.address ? `<p><b>DIRECCIÓN:</b> ${esc(b.address)}</p>` : ""}
-${b?.phone ? `<p><b>TELÉFONO:</b> ${esc(b.phone)}</p>` : ""}
-<h2>CAJA</h2>
-<table>
-${line("Monto de apertura", money(t.opening))}
-${line("Ventas totales", money(t.salesTotal))}
-${line("Entradas", money(t.income))}
-${line("Salidas", "- " + money(t.expense))}
-<tr class="b"><td>TOTAL</td><td class="r">${money(t.grandTotal)}</td></tr>
-</table>
-<h2>PROPINAS POR MÉTODO DE PAGO</h2>
-<table>
-${summary.byMethod.map((m) => line(m.name, money(Number(m.tips)))).join("")}
-</table>
-<h2>NÚMERO DE TRANSACCIONES</h2>
-<table>
-${summary.byMethod.map((m) => line(m.name, String(m.tx_count))).join("")}
-</table>
-<h2>TOTALES</h2>
-<table>
-${summary.byMethod.map((m) => line(`Ventas ${m.name.toLowerCase()}`, money(Number(m.total)))).join("")}
-${line("Propinas", money(t.tipsTotal))}
-<tr class="b"><td>TOTAL</td><td class="r">${money(t.salesTotal)}</td></tr>
-${line("Efectivo contado", money(counted ?? 0))}
-</table>
-<p style="text-align:center;margin-top:8px">Impreso por | AgoraOps</p>
-</body></html>`;
+  return [
+    { t: "text", v: "REPORTE DE CIERRE DE CAJA", align: "center" },
+    { t: "kv", k: "FECHA", v: now.toLocaleDateString("es-CO") },
+    { t: "kv", k: "HORA", v: now.toLocaleTimeString("es-CO") },
+    { t: "blank" },
+    { t: "kv", k: "CAJA", v: s.register_name },
+    { t: "kv", k: "RESPONSABLE", v: s.responsible_name ?? s.user_name ?? "-" },
+    { t: "kv", k: "F APERTURA", v: fmtDateTime(s.opened_at, "") },
+    { t: "kv", k: "F CIERRE", v: fmtDateTime(s.closed_at, "") },
+    { t: "divider" },
+    { t: "text", v: "ESTABLECIMIENTO", align: "center" },
+    { t: "text", v: b?.business_name ?? "AgoraOps" },
+    ...(b?.tax_id ? [{ t: "kv", k: "NIT", v: b.tax_id } as DocLine] : []),
+    ...(b?.address ? [{ t: "text", v: b.address } as DocLine] : []),
+    ...(b?.phone ? [{ t: "kv", k: "TEL", v: b.phone } as DocLine] : []),
+    { t: "divider" },
+    { t: "text", v: "CAJA", align: "center" },
+    { t: "kv", k: "Monto de apertura", v: money(t.opening) },
+    { t: "kv", k: "Ventas totales", v: money(t.salesTotal) },
+    { t: "kv", k: "Entradas", v: money(t.income) },
+    { t: "kv", k: "Salidas", v: "- " + money(t.expense) },
+    { t: "kv", k: "TOTAL", v: money(t.grandTotal) },
+    { t: "divider" },
+    { t: "text", v: "PROPINAS POR METODO DE PAGO", align: "center" },
+    ...summary.byMethod.map((m): DocLine => ({ t: "kv", k: m.name, v: money(Number(m.tips)) })),
+    { t: "divider" },
+    { t: "text", v: "NUMERO DE TRANSACCIONES", align: "center" },
+    ...summary.byMethod.map((m): DocLine => ({ t: "kv", k: m.name, v: String(m.tx_count) })),
+    { t: "divider" },
+    { t: "text", v: "TOTALES", align: "center" },
+    ...summary.byMethod.map((m): DocLine => ({
+      t: "kv", k: `Ventas ${m.name.toLowerCase()}`, v: money(Number(m.total)),
+    })),
+    { t: "kv", k: "Propinas", v: money(t.tipsTotal) },
+    { t: "kv", k: "TOTAL", v: money(t.salesTotal) },
+    { t: "kv", k: "Efectivo contado", v: money(counted ?? 0) },
+    { t: "blank" },
+    { t: "text", v: "Impreso por | AgoraOps", align: "center" },
+  ];
 }
 
 /* ───────── Cierre de caja (vista Polaris) ───────── */
@@ -424,14 +477,17 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
     }
   }
 
-  /** Informe de caja imprimible (formato tirilla, como Polaris). */
-  function printReport() {
+  /** Informe de caja imprimible (endpoint CAJA, ancho de la impresora). */
+  async function printReport() {
     if (!summary) return;
-    const html = buildCashReportHtml(summary, counted === "" ? null : Number(counted));
-    if (!printReceipt(html)) {
-      toast("error", "No fue posible generar el informe.");
+    try {
+      await printToEndpoint("CAJA", buildCierreDoc(summary, counted === "" ? null : Number(counted)));
+      toast("success", "Informe de caja enviado a impresión.");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "No fue posible generar el informe.");
     }
   }
+
 
   return (
     <div className="fade-in-up">
@@ -448,8 +504,10 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
           <Button variant="ghost" onClick={printReport}>
             <CalendarCheck size={15} className="-mt-0.5 mr-1 inline" /> Generar informe de caja
           </Button>
-          <Button variant="ghost"
-            onClick={() => toast("error", "Abrir la caja registradora estará disponible con el servicio de impresión local (§1.8.6).")}>
+          <Button variant="ghost" onClick={async () => {
+            try { await openCashDrawer(); toast("success", "Cajón abierto."); }
+            catch (e) { toast("error", e instanceof Error ? e.message : "No fue posible abrir el cajón."); }
+          }}>
             <Printer size={15} className="-mt-0.5 mr-1 inline" /> Abrir caja registradora
           </Button>
           <Button variant="ghost" onClick={onBack}>
@@ -656,8 +714,10 @@ function TxView({ row, type, sessions, onBack }: {
               : <LogOut size={15} className="-mt-0.5 mr-1 inline" />}
             Registrar {label}
           </Button>
-          <Button variant="ghost"
-            onClick={() => toast("error", "Abrir la caja registradora estará disponible con el servicio de impresión local (§1.8.6).")}>
+          <Button variant="ghost" onClick={async () => {
+            try { await openCashDrawer(); toast("success", "Cajón abierto."); }
+            catch (e) { toast("error", e instanceof Error ? e.message : "No fue posible abrir el cajón."); }
+          }}>
             <Printer size={15} className="-mt-0.5 mr-1 inline" /> Abrir caja registradora
           </Button>
           <Button variant="ghost" onClick={onBack}>
@@ -734,17 +794,15 @@ function ReportTab() {
     URL.revokeObjectURL(a.href);
   }
 
-  /** Voucher de cierre: misma tirilla del informe de caja. */
+  /** Voucher de cierre: misma tirilla del informe de caja (endpoint CAJA). */
   async function printVoucher(r: ReportRow) {
     try {
       const summary = await api<Summary>(`/api/cash/sessions/${r.id}/summary`);
-      const html = buildCashReportHtml(
-        summary, r.counted_cash == null ? null : Number(r.counted_cash));
-      if (!printReceipt(html)) {
-        toast("error", "No fue posible generar el voucher de cierre.");
-      }
+      await printToEndpoint("CAJA",
+        buildCierreDoc(summary, r.counted_cash == null ? null : Number(r.counted_cash)));
     } catch (err) {
-      toast("error", err instanceof ApiError ? err.message : "No fue posible obtener el voucher.");
+      toast("error", err instanceof ApiError ? err.message
+        : err instanceof Error ? err.message : "No fue posible obtener el voucher.");
     }
   }
 

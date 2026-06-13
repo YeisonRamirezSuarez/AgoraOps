@@ -18,7 +18,7 @@ const fs = require("node:fs");
 const express = require("express");
 const cors = require("cors");
 const { listPrinters } = require("./printers");
-const { buildBuffer, drawerBuffer } = require("./escpos");
+const { buildBuffer, drawerBuffer, jobText } = require("./escpos");
 const { sendToPrinter } = require("./print");
 
 const PORT = process.env.AGORAOPS_PRINT_PORT || 9090;
@@ -52,7 +52,19 @@ app.post("/synchronize/restaurant", (req, res) => {
   }
 });
 
-// Imprime una tirilla. body: { connectionType, printerName?, ip?, port?, text? | raw?, openDrawer? }
+// Previsualiza la tirilla renderizada al ancho indicado SIN imprimir.
+// body: { doc?, text?, paperWidth? } → { ok, text }. Útil para mostrar la
+// previsualización en la app y para verificar el formato a 58/80mm.
+app.post("/printer/preview", (req, res) => {
+  try {
+    res.json({ ok: true, text: jobText(req.body ?? {}) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Imprime una tirilla. body: { connectionType, printerName?, ip?, port?,
+//   paperWidth?, doc? | text? | raw?, openDrawer? }
 app.post("/printer/print", async (req, res) => {
   try {
     const buffer = buildBuffer(req.body ?? {});

@@ -15,14 +15,13 @@ interface InstallerFile {
   size: number;
   type: string;
   date: string;
+  url: string;
 }
 interface Listing {
   files: InstallerFile[];
   count: number;
   totalSize: number;
 }
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 function fmtSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -81,7 +80,7 @@ export function DownloadPrintService() {
                 <div className="flex justify-between"><dt>Tipo:</dt><dd className="font-medium">{f.type}</dd></div>
                 <div className="flex justify-between"><dt>Fecha:</dt><dd className="font-medium">{fmtDateTime(f.date)}</dd></div>
               </dl>
-              <a href={`${API_BASE}/print-service/${encodeURIComponent(f.name)}`} download
+              <a href={f.url} download target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-accent-blue px-4 py-2 text-sm font-medium text-white transition hover:opacity-90">
                 <Download size={15} /> Descargar
               </a>
