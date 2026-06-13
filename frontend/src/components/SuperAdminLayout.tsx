@@ -23,8 +23,13 @@ export default function SuperAdminLayout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // El panel del Super Admin siempre usa la identidad base de AgoraOps
-  useEffect(() => applyPalette(DEFAULT_PALETTE), []);
+  // El panel del Super Admin usa una identidad oscura propia (acero/grafito oscuro)
+  useEffect(() => {
+    const s = document.documentElement.style;
+    s.setProperty("--color-accent-blue", "hsl(228 28% 28%)");
+    s.setProperty("--color-accent-blue-hover", "hsl(228 28% 20%)");
+    s.setProperty("--color-accent-cyan", "hsl(228 25% 30%)");
+  }, []);
   useEffect(() => setMobileOpen(false), [location.pathname]);
 
   return (
@@ -34,10 +39,10 @@ export default function SuperAdminLayout() {
           onClick={() => setMobileOpen(false)} />
       )}
 
-      <aside className={`sidebar-super fixed inset-y-0 left-0 z-50 flex w-72 flex-col p-3 text-white transition-transform duration-200 md:static md:translate-x-0 md:shrink-0 ${
+      <aside className={`sidebar-super fixed inset-y-0 left-0 z-50 flex w-72 flex-col pt-0 px-3 pb-3 text-white transition-transform duration-200 md:static md:translate-x-0 md:shrink-0 ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       }`}>
-        <div className="mb-4 flex items-center gap-3 px-1 pt-1">
+        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-white/10 -mx-3 px-4 mb-4">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/95 text-[hsl(228_28%_17%)] shadow-md">
             <ShieldCheck size={26} strokeWidth={1.8} />
           </span>
@@ -81,10 +86,10 @@ export default function SuperAdminLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Barra superior solo móvil */}
-        <header className="glass flex items-center gap-3 rounded-none border-x-0 border-t-0 px-4 py-3 md:hidden">
+        {/* Barra superior (todas las páginas): misma paleta oscura de la barra lateral */}
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/10 px-4 text-white bg-[hsl(225_25%_24%)] md:px-6">
           <button onClick={() => setMobileOpen(true)} aria-label="Abrir menú"
-            className="grid h-9 w-9 place-items-center rounded-lg text-text-secondary transition hover:bg-bg-tertiary">
+            className="grid h-9 w-9 place-items-center rounded-lg text-white transition hover:bg-white/15 md:hidden">
             <Menu size={22} />
           </button>
           <span className="font-bold">Panel Super Admin</span>
