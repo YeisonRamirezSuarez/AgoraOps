@@ -10,7 +10,8 @@ import { useAuth } from "../lib/auth";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
 import {
-  Badge, Button, cop, Field, Input, Modal, PageHeader, Table, usePagination, useToast,
+  Badge, Button, cop, Field, fmtDateTime, Input, Modal, PageHeader, Table,
+  usePagination, useToast,
 } from "../components/ui";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -84,7 +85,7 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
         {slice.map((r) => (
           <tr key={String(r.id)}>
             <td className="px-4 py-2">#{String(r.order_number)}</td>
-            <td className="px-4 py-2 text-xs">{new Date(String(r.created_at)).toLocaleString("es-CO")}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(r.created_at as string)}</td>
             <td className="px-4 py-2">{r.table_number ? `Mesa ${r.table_number}` : "—"}</td>
             <td className="px-4 py-2">{String(r.attended_by ?? "—")}</td>
             <td className="px-4 py-2">{String(r.client_name ?? "—")}</td>
@@ -141,7 +142,7 @@ function GeneralTab() {
         {slice.map((r) => (
           <tr key={String(r.id)}>
             <td className="px-4 py-2">#{String(r.order_number)}</td>
-            <td className="px-4 py-2 text-xs">{new Date(String(r.created_at)).toLocaleString("es-CO")}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(r.created_at as string)}</td>
             <td className="px-4 py-2">{r.table_number ? `Mesa ${r.table_number}` : "—"}</td>
             <td className="px-4 py-2">
               <Badge color={r.status === "pagada" ? "emerald" : "amber"}>
@@ -182,7 +183,7 @@ function CancelledTab() {
           return (
             <tr key={String(r.id)}>
               <td className="px-4 py-2">#{String(r.order_number)}</td>
-              <td className="px-4 py-2 text-xs">{r.cancelled_at ? new Date(String(r.cancelled_at)).toLocaleString("es-CO") : "—"}</td>
+              <td className="px-4 py-2 text-xs">{fmtDateTime(r.cancelled_at as string)}</td>
               <td className="px-4 py-2">{r.table_number ? `Mesa ${r.table_number}` : "—"}</td>
               <td className="px-4 py-2">{String(r.attended_by ?? "—")}</td>
               <td className="px-4 py-2">{String(r.cancelled_by_name ?? "—")}</td>
@@ -248,7 +249,7 @@ function VoucherTab() {
         <div className="glass rounded-2xl p-5 font-mono text-sm">
           <p className="mb-1 text-center text-base font-bold">VOUCHER — #{String(voucher.order_number)}</p>
           <p className="mb-3 text-center text-xs text-text-muted">
-            {new Date(String(voucher.created_at)).toLocaleString("es-CO")}
+            {fmtDateTime(voucher.created_at as string)}
             {voucher.table_number ? ` · Mesa ${voucher.table_number}` : ""}
           </p>
           <div className="border-y border-dashed border-border-medium py-2">

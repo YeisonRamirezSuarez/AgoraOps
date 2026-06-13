@@ -13,13 +13,14 @@ import {
   LogIn, LogOut, Pencil, Plus, Printer, Save, Search,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { escHtml, printReceipt } from "../lib/printing";
 import { CrudPage } from "../components/CrudPage";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { ParametersForm } from "../components/ParametersForm";
 import { useTabParam } from "../lib/useTab";
 import {
-  Badge, Button, cop, FormRow, Input, MoneyInput, PageHeader, Select, Table,
-  TextArea, usePagination, useToast,
+  Badge, Button, cop, fmtDateTime, FormRow, Input, MoneyInput, PageHeader, Select,
+  Table, TextArea, usePagination, useToast,
 } from "../components/ui";
 
 interface SessionRow {
@@ -140,7 +141,7 @@ function SessionsTab() {
     const lines = filtered.map((r) => [
       r.name, r.user_name ?? "", r.responsible_name ?? "", r.opening_amount ?? "",
       r.current_total ?? "", "ABIERTO",
-      r.opened_at ? new Date(r.opened_at).toLocaleString("es-CO") : "",
+      fmtDateTime(r.opened_at, ""),
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"));
     const blob = new Blob(["﻿" + [headers.join(";"), ...lines].join("\r\n")],
       { type: "text/csv;charset=utf-8" });
@@ -192,7 +193,7 @@ function SessionsTab() {
             <td className="px-4 py-2 font-semibold">{cop.format(Number(r.current_total))}</td>
             <td className="px-4 py-2"><Badge color="emerald">ABIERTO</Badge></td>
             <td className="px-4 py-2 text-xs">
-              {r.opened_at ? new Date(r.opened_at).toLocaleString("es-CO") : "—"}
+              {fmtDateTime(r.opened_at)}
             </td>
             <td className="px-4 py-2 text-center">
               <button onClick={() => setTx({ row: r, type: "ENTRADA" })} title="Registrar entrada"
@@ -339,7 +340,7 @@ function buildCashReportHtml(summary: Summary, counted: number | null) {
   const s = summary.session;
   const b = summary.business;
   const t = summarizeCash(summary);
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const esc = escHtml;
   const money = (n: number) => cop.format(n);
   const line = (l: string, v: string) =>
     `<tr><td>${esc(l)}</td><td class="r">${esc(v)}</td></tr>`;
@@ -360,8 +361,8 @@ function buildCashReportHtml(summary: Summary, counted: number | null) {
 <br>
 <p><b>CAJA:</b> ${esc(s.register_name)}</p>
 <p><b>RESPONSABLE:</b> ${esc(s.responsible_name ?? s.user_name ?? "—")}</p>
-<p><b>F DE APERTURA:</b> ${new Date(s.opened_at).toLocaleString("es-CO")}</p>
-<p><b>F DE CIERRE:</b> ${s.closed_at ? new Date(s.closed_at).toLocaleString("es-CO") : ""}</p>
+<p><b>F DE APERTURA:</b> ${fmtDateTime(s.opened_at, "")}</p>
+<p><b>F DE CIERRE:</b> ${fmtDateTime(s.closed_at, "")}</p>
 <h2>ESTABLECIMIENTO</h2>
 <p><b>NOMBRE:</b> ${esc(b?.business_name ?? "AgoraOps")}</p>
 ${b?.tax_id ? `<p><b>NIT:</b> ${esc(b.tax_id)}</p>` : ""}
@@ -435,13 +436,10 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
   /** Informe de caja imprimible (formato tirilla, como Polaris). */
   function printReport() {
     if (!summary) return;
-    const w = window.open("", "_blank", "width=420,height=640");
-    if (!w) {
+    const html = buildCashReportHtml(summary, counted === "" ? null : Number(counted));
+    if (!printReceipt(html)) {
       toast("error", "No fue posible generar el informe.");
-      return;
     }
-    w.document.write(buildCashReportHtml(summary, counted === "" ? null : Number(counted)));
-    w.document.close();
   }
 
   return (
@@ -692,7 +690,7 @@ function TxView({ row, type, sessions, onBack }: {
             </td>
             <td className="px-4 py-2">{t.reason}</td>
             <td className="px-4 py-2">{t.user_name}</td>
-            <td className="px-4 py-2 text-xs">{new Date(t.created_at).toLocaleString("es-CO")}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(t.created_at)}</td>
           </tr>
         ))}
       </Table>
@@ -732,8 +730,8 @@ function ReportTab() {
       "Usuario de cierre", "Fecha de cierre", "Monto de apertura", "Registro total",
       "Efectivo contado en caja", "Diferencia de cierre", "Nota"];
     const lines = rows.map((r) => [
-      r.register_name, r.user_name ?? "", new Date(r.opened_at).toLocaleString("es-CO"),
-      r.closed_by_name ?? "", new Date(r.closed_at).toLocaleString("es-CO"),
+      r.register_name, r.user_name ?? "", fmtDateTime(r.opened_at, ""),
+      r.closed_by_name ?? "", fmtDateTime(r.closed_at, ""),
       r.opening_amount, r.registered_total, r.counted_cash ?? "", r.difference ?? "",
       r.note ?? "",
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"));
@@ -750,14 +748,11 @@ function ReportTab() {
   async function printVoucher(r: ReportRow) {
     try {
       const summary = await api<Summary>(`/api/cash/sessions/${r.id}/summary`);
-      const w = window.open("", "_blank", "width=420,height=640");
-      if (!w) {
+      const html = buildCashReportHtml(
+        summary, r.counted_cash == null ? null : Number(r.counted_cash));
+      if (!printReceipt(html)) {
         toast("error", "No fue posible generar el voucher de cierre.");
-        return;
       }
-      w.document.write(buildCashReportHtml(
-        summary, r.counted_cash == null ? null : Number(r.counted_cash)));
-      w.document.close();
     } catch (err) {
       toast("error", err instanceof ApiError ? err.message : "No fue posible obtener el voucher.");
     }
@@ -783,9 +778,9 @@ function ReportTab() {
             <tr key={r.id} className="hover:bg-bg-tertiary/40">
               <td className="px-4 py-2 font-medium">{r.register_name}</td>
               <td className="px-4 py-2">{r.user_name ?? "—"}</td>
-              <td className="px-4 py-2 text-xs">{new Date(r.opened_at).toLocaleString("es-CO")}</td>
+              <td className="px-4 py-2 text-xs">{fmtDateTime(r.opened_at)}</td>
               <td className="px-4 py-2">{r.closed_by_name ?? "—"}</td>
-              <td className="px-4 py-2 text-xs">{new Date(r.closed_at).toLocaleString("es-CO")}</td>
+              <td className="px-4 py-2 text-xs">{fmtDateTime(r.closed_at)}</td>
               <td className="px-4 py-2">{cop.format(Number(r.opening_amount))}</td>
               <td className="px-4 py-2 font-semibold">{cop.format(Number(r.registered_total))}</td>
               <td className="px-4 py-2">{r.counted_cash == null ? "—" : cop.format(Number(r.counted_cash))}</td>
@@ -870,7 +865,7 @@ function ReportDetail({ row, onBack }: { row: ReportRow; onBack: () => void }) {
             </td>
             <td className="px-4 py-2">{m.reason}</td>
             <td className="px-4 py-2">{m.created_by ?? "—"}</td>
-            <td className="px-4 py-2 text-xs">{new Date(m.created_at).toLocaleString("es-CO")}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(m.created_at)}</td>
             <td className="px-4 py-2 text-right">{cop.format(Number(m.amount))}</td>
           </tr>
         ))}

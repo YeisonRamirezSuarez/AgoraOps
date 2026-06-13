@@ -9,7 +9,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool, query } from "../db.js";
-import { dbErrorMessage } from "../lib/crud.js";
+import { bizError, dbErrorMessage } from "../lib/crud.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { ENTRY_REASONS, EXIT_REASONS } from "../lib/constants.js";
 
@@ -65,7 +65,7 @@ inventoryRouter.post("/movements", async (req, res) => {
       "SELECT * FROM inventory_products WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
       [d.inventoryProductId, req.user!.tenantId],
     );
-    if (!item) throw Object.assign(new Error("Producto de inventario no encontrado"), { code: "P0001", message: "Producto de inventario no encontrado" });
+    if (!item) throw bizError("Producto de inventario no encontrado");
 
     // Presentación de compra: 1 paca = factor unidades (§1.11.1)
     let qty = d.quantity;
@@ -87,7 +87,7 @@ inventoryRouter.post("/movements", async (req, res) => {
         [req.user!.tenantId],
       );
       if (!bs?.allow_overdraft) {
-        throw Object.assign(new Error("No se cuenta con la cantidad necesaria del producto"), { code: "P0001", message: "No se cuenta con la cantidad necesaria del producto" });
+        throw bizError("No se cuenta con la cantidad necesaria del producto");
       }
     }
 
@@ -122,11 +122,11 @@ inventoryRouter.post("/movements", async (req, res) => {
         [d.cashSessionId, req.user!.tenantId],
       );
       if (!session) {
-        throw Object.assign(new Error("La caja seleccionada no está abierta"), { code: "P0001", message: "La caja seleccionada no está abierta" });
+        throw bizError("La caja seleccionada no está abierta");
       }
       const amount = d.total ?? 0;
       if (amount <= 0) {
-        throw Object.assign(new Error("Indique el total para el movimiento de caja"), { code: "P0001", message: "Indique el total para el movimiento de caja" });
+        throw bizError("Indique el total para el movimiento de caja");
       }
       await client.query(
         `INSERT INTO cash_transactions (tenant_id, cash_session_id, type, reason, amount, user_id, user_name)
@@ -165,8 +165,23 @@ inventoryRouter.put("/movements/:id", async (req, res) => {
   res.json(rows[0]);
 });
 
+/** ¿El producto de inventario es del tenant del JWT? (purchase_presentations
+ * no tiene tenant_id; se valida contra inventory_products). */
+async function inventoryProductOfTenant(
+  id: string, tenantId: string | null,
+): Promise<boolean> {
+  return !!(await query(
+    "SELECT 1 FROM inventory_products WHERE id = $1 AND tenant_id = $2",
+    [id, tenantId],
+  )).length;
+}
+
 /** Presentaciones de compra de un producto (§1.11.1). */
 inventoryRouter.get("/products/:id/presentations", async (req, res) => {
+  if (!(await inventoryProductOfTenant(req.params.id, req.user!.tenantId))) {
+    res.status(404).json({ error: "Producto de inventario no encontrado" });
+    return;
+  }
   res.json(await query(
     "SELECT * FROM purchase_presentations WHERE inventory_product_id = $1",
     [req.params.id],
@@ -178,6 +193,10 @@ inventoryRouter.post("/products/:id/presentations", async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Nombre y factor de conversión son obligatorios" });
+    return;
+  }
+  if (!(await inventoryProductOfTenant(req.params.id, req.user!.tenantId))) {
+    res.status(404).json({ error: "Producto de inventario no encontrado" });
     return;
   }
   const rows = await query(

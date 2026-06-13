@@ -10,8 +10,8 @@ import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
 import { ArrowLeft, Plus } from "lucide-react";
 import {
-  Badge, Button, cop, Field, FormRow, Input, MoneyInput, PageHeader, Select, Table,
-  usePagination, useToast,
+  Badge, Button, cop, Field, fmtDateTime, FormRow, Input, MoneyInput, PageHeader,
+  Select, Table, usePagination, useToast,
 } from "../components/ui";
 import { ENTRY_REASONS, EXIT_REASONS } from "../shared/constants/movementReasons";
 
@@ -113,7 +113,7 @@ function MovementsTab() {
       >
         {slice.map((r) => (
           <tr key={String(r.id)}>
-            <td className="px-4 py-2 text-xs">{new Date(String(r.created_at)).toLocaleString("es-CO")}</td>
+            <td className="px-4 py-2 text-xs">{fmtDateTime(r.created_at as string)}</td>
             <td className="px-4 py-2">{String(r.product_name ?? "—")}</td>
             <td className="px-4 py-2">
               <Badge color={r.direction === "ENTRADA" ? "emerald" : "rose"}>{String(r.direction)}</Badge>

@@ -62,21 +62,23 @@ export default function NotificationBell() {
     }
   };
 
+  // Vive dentro de la barra superior del Layout (visible en toda la app)
   return (
-    <div ref={ref} className="fixed right-4 top-3 z-40 md:right-6">
+    <div ref={ref} className="relative">
+      {/* Blanco: vive sobre la barra superior de color (topbar-polaris) */}
       <button type="button" onClick={() => setOpen((o) => !o)}
         aria-label="Notificaciones"
-        className="glass relative grid h-11 w-11 place-items-center rounded-full text-text-secondary shadow-lg transition hover:text-accent-blue">
-        <Bell size={20} />
+        className="relative grid h-10 w-10 place-items-center rounded-full text-white/90 transition hover:bg-white/15 hover:text-white">
+        <Bell size={21} />
         {pending.length > 0 && (
-          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-accent-rose px-1 text-[11px] font-bold text-white shadow">
+          <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-accent-rose px-1 text-[11px] font-bold text-white shadow">
             {pending.length}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="glass absolute right-0 top-full mt-2 max-h-96 w-80 overflow-y-auto rounded-2xl shadow-2xl">
+        <div className="glass absolute right-0 top-full z-50 mt-2 max-h-96 w-80 overflow-y-auto rounded-2xl shadow-2xl">
           {pending.length === 0 ? (
             <div className="grid place-items-center gap-2 px-4 py-8 text-text-muted">
               <span className="grid h-14 w-14 place-items-center rounded-full bg-bg-tertiary">

@@ -14,13 +14,18 @@ export interface SessionUser {
   groupName: string | null;
   roleType: "administrador" | "empleado" | null;
   isSuperAdmin: boolean;
+  /** Clave temporal vigente: la app entera queda bloqueada hasta cambiarla. */
+  mustChangePassword: boolean;
 }
 
 interface AuthContextValue {
   user: SessionUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<{ mustChangePassword: boolean }>;
+  login: (username: string, password: string) =>
+    Promise<{ mustChangePassword: boolean; isSuperAdmin: boolean }>;
   logout: () => void;
+  /** Tras cambiar la clave: guarda el token nuevo y desbloquea la sesión. */
+  completePasswordChange: (token: string | null) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -43,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           groupName: me.groupName,
           roleType: me.roleType,
           isSuperAdmin: me.isSuperAdmin,
+          mustChangePassword: me.mustChangePassword ?? false,
         }),
       )
       .catch(() => setToken(null))
@@ -56,8 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: SessionUser;
     }>("/api/auth/login", { method: "POST", body: { username, password } });
     setToken(data.token);
-    setUser(data.user);
-    return { mustChangePassword: data.mustChangePassword };
+    setUser({ ...data.user, mustChangePassword: data.mustChangePassword });
+    return {
+      mustChangePassword: data.mustChangePassword,
+      isSuperAdmin: data.user.isSuperAdmin,
+    };
   }
 
   function logout() {
@@ -65,8 +74,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  function completePasswordChange(token: string | null) {
+    if (token) setToken(token);
+    setUser((u) => (u ? { ...u, mustChangePassword: false } : u));
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, logout, completePasswordChange }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -1,6 +1,6 @@
 {
   "name": "agoraops-frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "AgoraOps Web — React + TypeScript + Tailwind CSS + Vite",
   "type": "module",

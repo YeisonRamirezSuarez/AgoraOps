@@ -12,6 +12,23 @@ import { dbErrorMessage } from "../lib/crud.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const settingsRouter = Router();
+
+/** Branding del establecimiento (nombre, logo y paleta de colores).
+ * Registrado ANTES del guard de administrador: lo necesita cualquier
+ * usuario autenticado para aplicar el tema al iniciar sesión. */
+settingsRouter.get("/branding", requireAuth, async (req, res) => {
+  if (!req.user!.tenantId) {
+    res.json({ business_name: null, logo_url: null, theme_palette: "celeste" });
+    return;
+  }
+  const row = await queryOne(
+    `SELECT business_name, logo_url, theme_palette
+     FROM business_settings WHERE tenant_id = $1`,
+    [req.user!.tenantId],
+  );
+  res.json(row ?? { business_name: null, logo_url: null, theme_palette: "celeste" });
+});
+
 settingsRouter.use(requireAuth, requireAdmin);
 
 settingsRouter.get("/", async (req, res) => {

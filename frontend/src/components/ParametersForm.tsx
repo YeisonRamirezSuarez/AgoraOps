@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import { Button, Field, Input, useToast } from "./ui";
+import { Button, Field, Input, Loader, useToast } from "./ui";
 
 export function ParametersForm() {
   const toast = useToast();
@@ -16,7 +16,7 @@ export function ParametersForm() {
     api<Record<string, unknown>>("/api/settings").then(setS).catch(() => {});
   }, []);
 
-  if (!s) return <p className="text-text-muted">Cargando…</p>;
+  if (!s) return <Loader label="Cargando configuración" />;
   const isEC = s.country === "EC";
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
@@ -66,7 +66,7 @@ export function ParametersForm() {
           <span>Propina habilitada</span>
           <input type="checkbox" checked={!!s.tip_enabled}
             onChange={(e) => set("tip_enabled", e.target.checked)}
-            className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+            className="h-4 w-4 accent-[var(--color-accent-blue)]" />
         </label>
         {!!s.tip_enabled && (
           <Field label="Porcentaje de propina (%)">
@@ -80,7 +80,7 @@ export function ParametersForm() {
               <span>% de servicio (Ecuador)</span>
               <input type="checkbox" checked={!!s.service_enabled}
                 onChange={(e) => set("service_enabled", e.target.checked)}
-                className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+                className="h-4 w-4 accent-[var(--color-accent-blue)]" />
             </label>
             {!!s.service_enabled && (
               <Field label="Porcentaje de servicio (%)">
@@ -99,7 +99,7 @@ export function ParametersForm() {
           </span>
           <input type="checkbox" checked={!!s.allow_overdraft}
             onChange={(e) => set("allow_overdraft", e.target.checked)}
-            className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+            className="h-4 w-4 accent-[var(--color-accent-blue)]" />
         </label>
       </div>
 

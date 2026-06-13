@@ -10,6 +10,8 @@ export interface AuthUser {
   groupName: string | null;
   roleType: "administrador" | "empleado" | null;
   isSuperAdmin: boolean;
+  /** Clave temporal vigente: bloquea todo el API salvo el cambio de clave. */
+  mustChangePassword?: boolean;
 }
 
 declare global {
@@ -45,10 +47,25 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     req.user = verifyToken(token);
-    next();
   } catch {
     res.status(401).json({ error: "Sesión inválida o expirada" });
+    return;
   }
+
+  // Primer ingreso (§1.16): con clave temporal no se puede usar el sistema;
+  // solo se permite cambiar la contraseña y consultar la sesión.
+  if (req.user.mustChangePassword) {
+    const path = req.baseUrl + req.path;
+    const allowed = path === "/api/auth/change-password" || path === "/api/auth/me";
+    if (!allowed) {
+      res.status(403).json({
+        error: "Debe cambiar su contraseña temporal antes de continuar.",
+        code: "MUST_CHANGE_PASSWORD",
+      });
+      return;
+    }
+  }
+  next();
 }
 
 /** Módulos exclusivos del administrador (manual §1.2). */

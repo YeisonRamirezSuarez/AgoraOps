@@ -17,6 +17,7 @@ import {
   DollarSign, Info, Package, Smartphone, Target, TrendingUp, UtensilsCrossed, X, ChevronRight,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { Loader } from "../components/ui";
 
 /* ───────────────────────── Formatos (es-CO, COP — como Polaris) ───────── */
 
@@ -163,9 +164,9 @@ export default function Dashboard() {
 
   if (!data) {
     return (
-      <div className="fade-in-up">
+      <div className="fade-in-up p-6">
         <h1 className="text-2xl font-bold">Resumen Ejecutivo</h1>
-        <p className="mt-0.5 text-sm text-text-secondary">Cargando métricas…</p>
+        <Loader label="Cargando métricas" />
       </div>
     );
   }
@@ -1162,14 +1163,14 @@ function AlertChip({ label, count, Icon, onClick }: {
 
 /** Riel vertical sticky (tablet/desktop): barra completa de arriba a abajo
  * como el menú (estilo Polaris), integrada al layout sin flotar sobre la
- * barra de scroll. h = viewport menos el padding de <main> (p-6 ×2). */
+ * barra de scroll. h = viewport menos la barra superior del Layout (h-14). */
 function AlertsRail({ lowStockCount, overdraftCount, onOpen }: {
   lowStockCount: number;
   overdraftCount: number;
   onOpen: (tab: AlertsTab) => void;
 }) {
   return (
-    <div className="glass sticky top-0 hidden h-dvh w-14 shrink-0 flex-col items-center gap-4 rounded-none border-y-0 border-r-0 py-5 shadow-[-2px_0_12px_rgba(0,0,0,0.05)] md:flex">
+    <div className="glass sticky top-0 hidden h-[calc(100dvh-3.5rem)] w-14 shrink-0 flex-col items-center gap-4 rounded-none border-y-0 border-r-0 py-5 shadow-[-2px_0_12px_rgba(0,0,0,0.05)] md:flex">
       <button
         onClick={() => onOpen("low-stock")}
         className="flex flex-col items-center gap-2 text-text-secondary transition hover:text-accent-blue"

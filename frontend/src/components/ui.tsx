@@ -12,7 +12,9 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, AlertCircle, X, Inbox } from "lucide-react";
+import {
+  CheckCircle2, AlertCircle, X, Inbox, Eye, EyeOff, UtensilsCrossed,
+} from "lucide-react";
 
 /* ───────────────────────── Toasts ───────────────────────── */
 
@@ -70,7 +72,7 @@ export function useToast() {
 
 const BTN_VARIANTS = {
   primary:
-    "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_16px_hsl(199_89%_48%/0.2)] hover:brightness-110",
+    "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_16px_var(--accent-glow)] hover:brightness-110",
   success:
     "bg-gradient-to-br from-accent-emerald to-emerald-700 text-white hover:brightness-110",
   danger:
@@ -103,7 +105,7 @@ export function Button({
 /* ───────────────────────── Campos ───────────────────────── */
 
 const FIELD_CLS =
-  "w-full rounded-lg border border-border-subtle bg-bg-tertiary px-3 py-2.5 text-sm outline-none transition focus:border-accent-blue focus:shadow-[0_0_16px_hsl(199_89%_48%/0.15)]";
+  "w-full rounded-lg border border-border-subtle bg-bg-tertiary px-3 py-2.5 text-sm outline-none transition focus:border-accent-blue focus:shadow-[0_0_16px_var(--accent-glow)]";
 
 /** Fila de formulario tipo página (estilo Polaris "Agregar nueva …"):
  * etiqueta a la izquierda con * de obligatorio, control a la derecha. */
@@ -151,6 +153,31 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={`${FIELD_CLS} ${props.className ?? ""}`} />;
+}
+
+/** Campo de contraseña con botón 👁 para mostrar/ocultar el valor. */
+export function PasswordInput(
+  props: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type">,
+) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={show ? "text" : "password"}
+        className={`${FIELD_CLS} pr-10 ${props.className ?? ""}`}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setShow((v) => !v)}
+        aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted transition hover:text-text-primary"
+      >
+        {show ? <EyeOff size={17} /> : <Eye size={17} />}
+      </button>
+    </div>
+  );
 }
 
 /** Input de dinero: muestra el valor formateado en COP mientras se
@@ -308,6 +335,36 @@ export function Table({
   );
 }
 
+/* ───────────────────────── Loader ─────────────────────────
+   Animación de carga global con la lógica del negocio (plato +
+   cubiertos) en el color de la paleta del establecimiento.
+   `full` ocupa toda la pantalla (guards de sesión); sin `full` se
+   centra en el área de contenido de la página. */
+
+export function Loader({ label = "Cargando", full = false }: {
+  label?: string;
+  full?: boolean;
+}) {
+  const content = (
+    <div className="flex flex-col items-center gap-5" role="status" aria-live="polite">
+      <div className="relative grid h-28 w-28 place-items-center sm:h-32 sm:w-32">
+        <span className="loader-ring absolute inset-0" />
+        <span className="grid h-20 w-20 place-items-center rounded-full bg-bg-secondary shadow-xl sm:h-[88px] sm:w-[88px]">
+          <UtensilsCrossed className="loader-utensils h-9 w-9 text-accent-blue sm:h-10 sm:w-10" />
+        </span>
+      </div>
+      <p className="text-base font-semibold text-text-secondary">
+        {label}
+        <span className="loader-dots" />
+      </p>
+    </div>
+  );
+  if (full) {
+    return <div className="grid min-h-[100dvh] place-items-center p-6">{content}</div>;
+  }
+  return <div className="grid place-items-center px-6 py-20">{content}</div>;
+}
+
 /* ───────────────────────── Varios ───────────────────────── */
 
 export function Badge({
@@ -357,6 +414,15 @@ export const cop = new Intl.NumberFormat("es-CO", {
   currency: "COP",
   maximumFractionDigits: 0,
 });
+
+/** Fecha y hora local (es-CO) de un valor de BD; `fallback` si viene vacío. */
+export function fmtDateTime(
+  value: string | null | undefined,
+  fallback = "—",
+): string {
+  if (!value) return fallback;
+  return new Date(value).toLocaleString("es-CO");
+}
 
 /* ─────────────── Paginación estilo Polaris (todas las tablas) ───────────────
    "Ver 10/20/50" · « ‹ pág › » · [x a y de z] */

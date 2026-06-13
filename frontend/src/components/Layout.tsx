@@ -19,6 +19,9 @@ import {
   LayoutGrid, ChefHat, Bell, X,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import { api } from "../lib/api";
+import { applyPalette } from "../shared/constants/palettes";
+import { APP_VERSION } from "../shared/constants/app";
 import NotificationBell from "./NotificationBell";
 
 interface NavChild {
@@ -148,6 +151,28 @@ export default function Layout() {
   // Cerrar el drawer al navegar a otra página
   useEffect(() => setMobileOpen(false), [location.pathname, location.search]);
 
+  // Branding del establecimiento (Multicomercio): paleta de colores sobre
+  // los design tokens + nombre/logo para la barra superior
+  const [branding, setBranding] = useState<{
+    name: string | null;
+    logoUrl: string | null;
+  }>({ name: null, logoUrl: null });
+  useEffect(() => {
+    if (!user || user.isSuperAdmin) return;
+    // Última paleta conocida de inmediato (evita el destello celeste
+    // mientras responde el API); luego la autoritativa del servidor.
+    applyPalette(localStorage.getItem("agoraops_palette"));
+    api<{ business_name: string | null; logo_url: string | null; theme_palette: string | null }>(
+      "/api/settings/branding",
+    )
+      .then((b) => {
+        applyPalette(b.theme_palette);
+        localStorage.setItem("agoraops_palette", b.theme_palette ?? "celeste");
+        setBranding({ name: b.business_name, logoUrl: b.logo_url });
+      })
+      .catch(() => {});
+  }, [user]);
+
   function isChildActive(c: NavChild): boolean {
     const [path, query] = c.to.split("?");
     if (location.pathname !== path && !location.pathname.startsWith(`${path}/`)) {
@@ -172,12 +197,14 @@ export default function Layout() {
           onClick={() => setMobileOpen(false)} />
       )}
 
-      <aside className={`sidebar-polaris fixed inset-y-0 left-0 z-50 flex w-72 flex-col p-3 text-white transition-[transform,width] duration-200 md:static md:translate-x-0 md:shrink-0 ${
+      <aside className={`sidebar-polaris fixed inset-y-0 left-0 z-50 flex w-72 flex-col pt-0 px-3 pb-3 text-white transition-[transform,width] duration-200 md:static md:translate-x-0 md:shrink-0 ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       } ${collapsed ? "md:w-[76px]" : "md:w-72"}`}>
         {/* Cabecera: avatar + usuario + botón ☰ (Polaris) */}
-        <div className={`mb-4 flex items-center gap-3 px-1 pt-1 ${collapsed ? "md:flex-col" : ""}`}>
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-[hsl(200_90%_47%)] shadow-md">
+        <div className={`flex h-14 shrink-0 items-center gap-3 border-b border-white/10 -mx-3 px-4 ${
+          collapsed ? "md:flex-col md:h-auto md:py-3 md:border-b-0 md:mx-0 md:px-0" : "mb-4"
+        }`}>
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-accent-blue-hover shadow-md">
             <CircleUserRound size={30} strokeWidth={1.6} />
           </span>
           <div className={`min-w-0 flex-1 ${collapsed ? "md:hidden" : ""}`}>
@@ -201,7 +228,7 @@ export default function Layout() {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto pr-1">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto scrollbar-none pr-1">
           {NAV.map((g) => {
             if (!g.children) {
               if (!canSee(g.roles)) return null;
@@ -288,12 +315,32 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className={`flex-1 overflow-y-auto ${location.pathname === "/dashboard" ? "p-0 " + (hideMobileNav ? "" : "pb-24 md:pb-0") : "p-6 " + (hideMobileNav ? "" : "pb-24 md:pb-6")}`}>
-        <Outlet />
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* ══════ Barra superior (todas las páginas): branding + campana +
+            versión, con el mismo color del menú (paleta del tenant) ══════ */}
+        <header className="topbar-polaris z-30 flex h-14 shrink-0 items-center justify-between gap-3 px-4 text-white md:px-6">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {branding.logoUrl && (
+              <img src={branding.logoUrl} alt=""
+                className="h-9 w-9 rounded-lg bg-white object-contain p-0.5 shadow" />
+            )}
+            <span className="truncate text-lg md:text-xl font-extrabold tracking-tight">
+              {branding.name ?? "AgoraOps"}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Campana de notificaciones (réplica Polaris), en toda la app */}
+            <NotificationBell />
+            <span className="hidden text-sm font-semibold text-white/90 sm:block">
+              Versión {APP_VERSION}
+            </span>
+          </div>
+        </header>
 
-      {/* Campana de notificaciones (réplica Polaris), visible en toda la app */}
-      <NotificationBell />
+        <main className={`flex-1 overflow-y-auto ${location.pathname === "/dashboard" ? "p-0 " + (hideMobileNav ? "" : "pb-24 md:pb-0") : "p-6 " + (hideMobileNav ? "" : "pb-24 md:pb-6")}`}>
+          <Outlet />
+        </main>
+      </div>
 
       {/* ══════════ Barra de navegación inferior (solo teléfonos) ══════════ */}
       {!hideMobileNav && (

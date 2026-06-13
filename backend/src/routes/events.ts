@@ -18,10 +18,7 @@ async function ensureListener() {
   if (listener) return;
   listener = new pg.Client({
     connectionString: config.databaseUrl,
-    ssl: config.databaseUrl.includes("localhost") ||
-      config.databaseUrl.includes("127.0.0.1")
-      ? undefined
-      : { rejectUnauthorized: false },
+    ssl: config.dbSsl, // centralizado en config (igual que el pool)
   });
   await listener.connect();
   await listener.query("LISTEN app_events");
