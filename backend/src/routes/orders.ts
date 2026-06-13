@@ -295,8 +295,19 @@ ordersRouter.post("/occupy", async (req, res) => {
 
 /** Detalle de la orden con ítems y toppings. */
 ordersRouter.get("/:id", async (req, res) => {
+  // Datos de domicilio embebidos para los widgets del ticket (Polaris:
+  // delivery-info-panel y driver-widget muestran nombre del cliente y del
+  // domiciliario asignados).
   const order = await queryOne(
-    "SELECT * FROM orders WHERE id = $1 AND tenant_id = $2",
+    `SELECT o.*,
+            cl.name AS client_name, cl.last_name AS client_last_name,
+            cl.phone AS client_phone, cl.address AS client_address,
+            NULLIF(TRIM(COALESCE(dp.first_name, '') || ' ' || COALESCE(dp.last_name, '')), '')
+              AS delivery_personnel_name
+       FROM orders o
+       LEFT JOIN clients cl ON cl.id = o.client_id
+       LEFT JOIN delivery_personnel dp ON dp.id = o.delivery_personnel_id
+      WHERE o.id = $1 AND o.tenant_id = $2`,
     [req.params.id, req.user!.tenantId],
   );
   if (!order) {

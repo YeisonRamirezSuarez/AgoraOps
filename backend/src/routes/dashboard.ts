@@ -23,6 +23,21 @@ dashboardRouter.use(requireAuth);
 /** Zona horaria del negocio (Polaris opera en hora local de Colombia). */
 const TZ = "America/Bogota";
 
+/**
+ * Fragmento WHERE *sargable* para "created_at cae en el rango de días locales
+ * [$fromParam, $toParam]". Compara la columna timestamptz cruda contra límites
+ * constantes para que el planificador use el índice (orders.created_at /
+ * order_payments.created_at) en lugar de un Seq Scan: el patrón anterior
+ * `(created_at AT TIME ZONE TZ)::date BETWEEN …` aplicaba una función sobre la
+ * columna y descartaba el índice, forzando escaneo completo en cada request.
+ * Colombia no observa DST, así que el corte por medianoche local es exacto.
+ * Cota superior exclusiva (< día siguiente) para incluir el día `to` completo.
+ */
+function dateRange(col: string, fromParam: number, toParam: number): string {
+  return `${col} >= ($${fromParam}::date::timestamp AT TIME ZONE '${TZ}')
+      AND ${col} <  (($${toParam}::date + 1)::timestamp AT TIME ZONE '${TZ}')`;
+}
+
 type Range = { from: string; to: string };
 type TrendBucket = "hour" | "day" | "month";
 
@@ -137,7 +152,7 @@ async function rankingOrders(tenant: string | null, r: Range): Promise<RankingOr
      LEFT JOIN order_items oi ON oi.order_id = o.id
        AND oi.kitchen_status <> 'cancelado'
      WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-       AND (o.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date
+       AND ${dateRange("o.created_at", 2, 3)}
      GROUP BY u.username, u.full_name
      ORDER BY count DESC, sales DESC`,
     [tenant, r.from, r.to],
@@ -161,7 +176,7 @@ async function rankingPayments(tenant: string | null, r: Range): Promise<Ranking
      JOIN orders o ON o.id = op.order_id
      JOIN users u ON u.id = op.user_id
      WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-       AND (op.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date
+       AND ${dateRange("op.created_at", 2, 3)}
      GROUP BY u.username, u.full_name
      ORDER BY amount DESC, count DESC`,
     [tenant, r.from, r.to],
@@ -182,7 +197,7 @@ async function periodKPIs(tenant: string | null, r: Range) {
             COALESCE(SUM(o.total - o.tip), 0) AS total_sales
      FROM orders o
      WHERE o.tenant_id = $1 AND o.status = 'pagada'
-       AND (o.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date`,
+       AND ${dateRange("o.created_at", 2, 3)}`,
     [tenant, r.from, r.to],
   );
   const payments = await queryOne<{ total_payments: number }>(
@@ -190,7 +205,7 @@ async function periodKPIs(tenant: string | null, r: Range) {
      FROM order_payments op
      JOIN orders o ON o.id = op.order_id
      WHERE o.tenant_id = $1 AND o.status = 'pagada'
-       AND (op.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date`,
+       AND ${dateRange("op.created_at", 2, 3)}`,
     [tenant, r.from, r.to],
   );
   const totalOrders = orders?.total_orders ?? 0;
@@ -218,7 +233,7 @@ async function trendData(
      FROM orders o
      JOIN users u ON u.id = o.user_id
      WHERE o.tenant_id = $1 AND o.status = 'pagada'
-       AND (o.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date
+       AND ${dateRange("o.created_at", 2, 3)}
        AND ($4::text IS NULL OR u.username = $4)
      GROUP BY 1`,
     [tenant, r.from, r.to, actorLogin],
@@ -231,7 +246,7 @@ async function trendData(
      JOIN orders o ON o.id = op.order_id
      JOIN users u ON u.id = op.user_id
      WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-       AND (op.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date
+       AND ${dateRange("op.created_at", 2, 3)}
        AND ($4::text IS NULL OR u.username = $4)
      GROUP BY 1`,
     [tenant, r.from, r.to, actorLogin],
@@ -356,7 +371,7 @@ dashboardRouter.get("/", async (req, res) => {
       `SELECT COALESCE(SUM(o.total - o.tip), 0) AS billed
        FROM orders o
        WHERE o.tenant_id = $1 AND o.status = 'pagada'
-         AND (o.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date`,
+         AND ${dateRange("o.created_at", 2, 3)}`,
       [tenant, r.from, r.to],
     );
     return Number(row?.billed ?? 0);
@@ -368,7 +383,7 @@ dashboardRouter.get("/", async (req, res) => {
        FROM orders o
        JOIN users u ON u.id = o.user_id
        WHERE o.tenant_id = $1 AND o.status = 'pagada'
-         AND (o.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date
+         AND ${dateRange("o.created_at", 2, 3)}
        GROUP BY u.username
        ORDER BY value DESC`,
       [tenant, r.from, r.to],
@@ -384,7 +399,7 @@ dashboardRouter.get("/", async (req, res) => {
        JOIN orders o ON o.id = op.order_id
        JOIN payment_methods pm ON pm.id = op.payment_method_id
        WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-         AND (op.created_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date
+         AND ${dateRange("op.created_at", 2, 3)}
        GROUP BY pm.name`,
       [tenant, r.from, r.to],
     );
@@ -410,7 +425,7 @@ dashboardRouter.get("/", async (req, res) => {
        JOIN orders o ON o.id = oi.order_id
        WHERE o.tenant_id = $1 AND o.status = 'pagada'
          AND oi.kitchen_status <> 'cancelado'
-         AND (o.created_at AT TIME ZONE '${TZ}')::date >= ($2::date - 30)
+         AND o.created_at >= (($2::date - 30)::timestamp AT TIME ZONE '${TZ}')
        GROUP BY oi.product_name
        ORDER BY qty DESC
        LIMIT 10`,

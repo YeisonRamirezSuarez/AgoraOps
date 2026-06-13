@@ -63,6 +63,11 @@ INSERT INTO rooms (tenant_id, name)
 VALUES ('00000000-0000-0000-0000-000000000001', 'Sala Principal')
 ON CONFLICT (tenant_id, name) DO NOTHING;
 
+-- Sala de sistema DOMICILIO (protegida, igual a Polaris §1.7.1)
+INSERT INTO rooms (tenant_id, name, is_active, is_system)
+VALUES ('00000000-0000-0000-0000-000000000001', 'DOMICILIO', true, true)
+ON CONFLICT (tenant_id, name) DO NOTHING;
+
 INSERT INTO tables (tenant_id, room_id, number, seats)
 SELECT '00000000-0000-0000-0000-000000000001', r.id, n, 4
 FROM rooms r, generate_series(1, 5) AS n

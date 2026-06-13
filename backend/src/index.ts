@@ -22,6 +22,7 @@ import { reportsRouter } from "./routes/reports.js";
 import { reservationsRouter } from "./routes/reservations.js";
 import { clientsRouter } from "./routes/clients.js";
 import { deliveryRouter } from "./routes/delivery.js";
+import { schedulesRouter } from "./routes/schedules.js";
 import { superadminRouter } from "./routes/superadmin.js";
 
 const app = express();
@@ -48,6 +49,7 @@ app.use("/api/reports", reportsRouter);
 app.use("/api/reservations", reservationsRouter);
 app.use("/api/clients", clientsRouter);
 app.use("/api/delivery", deliveryRouter);
+app.use("/api/schedules", schedulesRouter);
 app.use("/api/superadmin", superadminRouter);
 
 // Manejador de errores no capturados

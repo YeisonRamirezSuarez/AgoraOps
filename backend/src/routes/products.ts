@@ -35,6 +35,164 @@ productsRouter.param("id", (req, res, next, id) => {
     .catch(next);
 });
 
+// Autogeneración de código (§1.10.1): Polaris no pide un código manual al
+// crear el producto. Si el cliente no envía `code`, asignamos el siguiente
+// correlativo numérico del tenant para satisfacer UNIQUE(tenant_id, code) sin
+// exponer el campo en la UI. next() cae en el POST "/" del crudRouter de abajo.
+productsRouter.post("/", requireAdmin, async (req, res, next) => {
+  if (req.body.code === undefined || req.body.code === null || req.body.code === "") {
+    try {
+      const row = await queryOne<{ next: string }>(
+        `SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::bigint), 0) + 1 AS next
+           FROM products WHERE tenant_id = $1`,
+        [req.user!.tenantId],
+      );
+      req.body.code = String(row?.next ?? 1);
+    } catch (err) {
+      next(err);
+      return;
+    }
+  }
+  next();
+});
+
+/* ───────── Carga masiva de productos por Excel (§1.10.2) ─────────
+   El frontend lee el XLS/XLSX y envía las filas como JSON. Se procesa fila
+   por fila (errores aislados, reporte por fila estilo Polaris). Columnas de
+   la plantilla: Categoría, NombreProducto, PrecioVenta, Cocina, Estado,
+   Descripción, Inventariable, CantidadInicial, CantidadMinima e Impuestos
+   (estas últimas se ignoran: AgoraOps aún no tiene módulo de impuestos). */
+function norm(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, "");
+}
+const TRUE_TOKENS = new Set(["si", "s", "x", "1", "true", "verdadero", "activo", "yes", "y"]);
+function parseBool(v: unknown, dflt: boolean): boolean {
+  if (v === undefined || v === null || String(v).trim() === "") return dflt;
+  return TRUE_TOKENS.has(norm(String(v)));
+}
+function parseNum(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (v === undefined || v === null) return 0;
+  const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+/** Acceso a una celda por nombre de columna, tolerante a acentos/mayúsculas. */
+function rowGetter(row: Record<string, unknown>) {
+  const map = new Map<string, unknown>();
+  for (const [k, v] of Object.entries(row)) map.set(norm(k), v);
+  return (...keys: string[]): unknown => {
+    for (const k of keys) {
+      const v = map.get(norm(k));
+      if (v !== undefined) return v;
+    }
+    return undefined;
+  };
+}
+
+productsRouter.post("/bulk", requireAdmin, async (req, res) => {
+  const operation = req.body.operation === "update" ? "update" : "create";
+  const rows: Record<string, unknown>[] = Array.isArray(req.body.rows) ? req.body.rows : [];
+  if (rows.length === 0) {
+    res.status(400).json({ error: "No hay filas para procesar." });
+    return;
+  }
+  const tenantId = req.user!.tenantId;
+  const errors: { row: number; name: string; message: string }[] = [];
+  let created = 0, updated = 0, skipped = 0;
+
+  // Cache de categorías por nombre normalizado (para resolver/crear)
+  const catRows = await query<{ id: number; name: string }>(
+    "SELECT id, name FROM categories WHERE tenant_id = $1", [tenantId]);
+  const catByName = new Map<string, number>();
+  for (const c of catRows) catByName.set(norm(c.name), c.id);
+
+  // Código base para autogeneración (solo en create); se incrementa por fila.
+  let nextCode = 0;
+  if (operation === "create") {
+    const r = await queryOne<{ next: string }>(
+      `SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::bigint), 0) + 1 AS next
+         FROM products WHERE tenant_id = $1`, [tenantId]);
+    nextCode = Number(r?.next ?? 1);
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const excelRow = i + 2; // fila 1 = encabezados
+    const get = rowGetter(rows[i]);
+    const catNameRaw = String(get("Categoria", "Categoría") ?? "").trim();
+    const name = String(get("NombreProducto", "Nombre", "Producto") ?? "").trim();
+    if (!name && !catNameRaw) { skipped++; continue; } // fila vacía
+    try {
+      if (!name) throw new Error("NombreProducto está vacío");
+      if (!catNameRaw) throw new Error("Categoría está vacía");
+
+      let categoryId = catByName.get(norm(catNameRaw));
+      if (!categoryId) {
+        const nc = await queryOne<{ id: number }>(
+          "INSERT INTO categories (tenant_id, name, is_active) VALUES ($1, $2, true) RETURNING id",
+          [tenantId, catNameRaw]);
+        categoryId = nc!.id;
+        catByName.set(norm(catNameRaw), categoryId);
+      }
+
+      const salePrice = parseNum(get("PrecioVenta", "Precio"));
+      const goesToKitchen = parseBool(get("Cocina"), false);
+      const isActive = parseBool(get("Estado"), true);
+      const description = String(get("Descripcion", "Descripción") ?? "").trim() || null;
+      const isInventariable = parseBool(get("Inventariable"), false);
+      const cantInicial = parseNum(get("CantidadInicial"));
+      const cantMinima = parseNum(get("CantidadMinima"));
+
+      if (operation === "create") {
+        const prod = await queryOne<{ id: number }>(
+          `INSERT INTO products
+             (tenant_id, category_id, code, name, description, product_type,
+              sale_price, cost_price, is_inventariable, goes_to_kitchen, is_active)
+           VALUES ($1, $2, $3, $4, $5, 'NORMAL', $6, 0, $7, $8, $9) RETURNING id`,
+          [tenantId, categoryId, String(nextCode++), name, description,
+            salePrice, isInventariable, goesToKitchen, isActive]);
+        if (isInventariable) {
+          await query(
+            `INSERT INTO inventory_products (tenant_id, type, name, unit, product_id, stock, min_stock, is_active)
+             VALUES ($1, 'consumible', $2, 'Unidad', $3, $4, $5, true)`,
+            [tenantId, name, prod!.id, cantInicial, cantMinima]);
+        }
+        created++;
+      } else {
+        const existing = await queryOne<{ id: number }>(
+          "SELECT id FROM products WHERE tenant_id = $1 AND category_id = $2 AND lower(name) = lower($3)",
+          [tenantId, categoryId, name]);
+        if (!existing) {
+          throw new Error(`No existe el producto "${name}" en la categoría "${catNameRaw}"`);
+        }
+        await query(
+          `UPDATE products SET sale_price = $1, goes_to_kitchen = $2, is_active = $3,
+                  description = $4, is_inventariable = $5
+           WHERE id = $6 AND tenant_id = $7`,
+          [salePrice, goesToKitchen, isActive, description, isInventariable, existing.id, tenantId]);
+        if (isInventariable) {
+          const cons = await queryOne<{ id: number }>(
+            "SELECT id FROM inventory_products WHERE tenant_id = $1 AND product_id = $2 AND type = 'consumible'",
+            [tenantId, existing.id]);
+          if (cons) {
+            await query("UPDATE inventory_products SET stock = $1, min_stock = $2 WHERE id = $3",
+              [cantInicial, cantMinima, cons.id]);
+          } else {
+            await query(
+              `INSERT INTO inventory_products (tenant_id, type, name, unit, product_id, stock, min_stock, is_active)
+               VALUES ($1, 'consumible', $2, 'Unidad', $3, $4, $5, true)`,
+              [tenantId, name, existing.id, cantInicial, cantMinima]);
+          }
+        }
+        updated++;
+      }
+    } catch (err) {
+      errors.push({ row: excelRow, name: name || catNameRaw || "(fila)", message: dbErrorMessage(err) });
+    }
+  }
+
+  res.json({ operation, total: rows.length, created, updated, skipped, errors });
+});
+
 // CRUD base (eliminar con ventas asociadas lo bloquea la FK de order_items)
 productsRouter.use("/", crudRouter({
   table: "products",
@@ -66,6 +224,11 @@ productsRouter.get("/menu/list", requireAuth, async (req, res) => {
                     WHERE bs.tenant_id = $1 AND bs.allow_overdraft)
          OR EXISTS (SELECT 1 FROM inventory_products ip
                     WHERE ip.product_id = p.id AND ip.type = 'consumible' AND ip.stock > 0)
+         -- Inventariable pero aún sin consumible vinculado: nada que descontar,
+         -- así que sigue visible (evita que un producto recién creado, que por
+         -- defecto nace is_inventariable=true, desaparezca del menú sin stock).
+         OR NOT EXISTS (SELECT 1 FROM inventory_products ip
+                    WHERE ip.product_id = p.id AND ip.type = 'consumible')
        )
        -- Si hay categorías favoritas para hoy, solo esas (§1.7.6)
        AND (
@@ -206,6 +369,22 @@ productsRouter.post("/:id/variants", requireAuth, requireAdmin, async (req, res)
       ],
     );
     res.status(201).json(row);
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+productsRouter.delete("/:id/variants/:variantId", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const row = await queryOne(
+      "DELETE FROM product_variants WHERE id = $1 AND product_id = $2 RETURNING id",
+      [req.params.variantId, req.params.id],
+    );
+    if (!row) {
+      res.status(404).json({ error: "Variante no encontrada" });
+      return;
+    }
+    res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: dbErrorMessage(err) });
   }

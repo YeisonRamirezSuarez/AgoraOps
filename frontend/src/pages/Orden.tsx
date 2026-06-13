@@ -17,14 +17,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRightLeft, ChevronUp, MessageSquare, Minus, Pencil, Plus,
-  Printer, ReceiptText, RotateCcw, Search, Send, ShoppingCart, Trash2,
-  Undo2, UserPlus, Users, Wallet, X,
+  ArrowLeft, ArrowRightLeft, Bike, Check, ChevronUp, MapPin, MessageSquare,
+  Minus, Pencil, Phone, Plus, Printer, ReceiptText, RotateCcw, Search, Send,
+  ShoppingCart, Trash2, Undo2, User, UserPlus, Users, Wallet, X,
 } from "lucide-react";
 import { api, ApiError, subscribeEvents } from "../lib/api";
 import {
   Badge, Button, cop, Field, Input, Loader, Modal, Select, TextArea, useToast,
 } from "../components/ui";
+import {
+  type Alert, type FormState, type Geo,
+  ClienteFormFields, emptyForm, PolarisAlert, validateClientForm,
+} from "../components/ClienteForm";
 import {
   isCartStatus, isFinished, isInKitchen, KITCHEN_STATUS_LABELS,
 } from "../shared/constants/kitchenStatus";
@@ -59,13 +63,20 @@ export interface Order {
   id: number; order_number: string; comment: string | null; status: string;
   table_id: number; room_id: number | null; attended_by: string | null;
   client_id: number | null; delivery_personnel_id: number | null;
+  // Datos de domicilio embebidos (widgets del ticket, Polaris)
+  client_name: string | null; client_last_name: string | null;
+  client_phone: string | null; client_address: string | null;
+  delivery_personnel_name: string | null;
   items: OrderItem[];
 }
 interface BoardCell {
   table_id: number; number: number; room_id: number; room_name: string;
   order_id: number | null;
 }
-interface Client { id: number; name: string; last_name: string | null; document_id: string }
+interface Client {
+  id: number; name: string; last_name: string | null; document_id: string;
+  phone: string | null; address: string | null;
+}
 interface Driver {
   id: number; name: string; phone: string; plate: string; company_name: string;
 }
@@ -95,7 +106,7 @@ export default function Orden() {
     useState<{ product: MenuProduct; item?: OrderItem } | null>(null);
   const [modal, setModal] = useState<
     "" | "comment" | "return" | "transfer" | "close" | "view" | "print" |
-    "assign" | "newCustomer" | "domCliente" | "domDriver"
+    "assign" | "newCustomer" | "domCliente" | "domDriver" | "domRegistro"
   >("");
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -303,8 +314,30 @@ export default function Orden() {
       </li>
     ));
 
-  const panelBody = activeItems.length === 0 ? (
-    <div className="grid h-full min-h-48 place-items-center text-center text-text-muted">
+  // Widgets de domicilio (Polaris delivery-info-panel + driver-widget): van
+  // arriba del ticket. El cliente se cambia con el lápiz; el domiciliario con
+  // su botón. Ambos son opcionales (se pueden omitir).
+  const clientName = order.client_name
+    ? clientLabel({ name: order.client_name, last_name: order.client_last_name } as Client)
+    : null;
+  const deliveryWidgets = isDomicilio && (
+    <div className="mb-4 space-y-2">
+      <DeliveryWidget
+        label="Domicilio para:" icon={<Bike size={18} />}
+        name={clientName ?? "Sin asignar"} assigned={!!clientName}
+        actionLabel={clientName ? undefined : "Asignar"}
+        onAction={() => setModal("domCliente")} />
+      <DeliveryWidget
+        label="Domiciliario:" icon={<Bike size={18} />}
+        name={order.delivery_personnel_name ?? "No asignado"}
+        assigned={!!order.delivery_personnel_name}
+        actionLabel={order.delivery_personnel_name ? undefined : "Asignar"}
+        onAction={() => setModal("domDriver")} />
+    </div>
+  );
+
+  const itemsBody = activeItems.length === 0 ? (
+    <div className="grid min-h-32 place-items-center py-8 text-center text-text-muted">
       <div>
         <ReceiptText size={34} className="mx-auto mb-2 opacity-50" />
         <p className="text-sm">Mesa vacía</p>
@@ -323,6 +356,13 @@ export default function Orden() {
       {finishedItems.length > 0 && (
         <PanelSection label="Listos">{renderItems(finishedItems)}</PanelSection>
       )}
+    </>
+  );
+
+  const panelBody = (
+    <>
+      {deliveryWidgets}
+      {itemsBody}
     </>
   );
 
@@ -562,13 +602,19 @@ export default function Orden() {
       <NewCustomerModal open={modal === "newCustomer"}
         onClose={() => setModal("")}
         onCreated={(id) => { loadClients(); setSelectedCustomerId(id); setModal(""); }} />
+      {/* Domicilio (Polaris): el cliente se selecciona/cambia desde el widget
+          del ticket; NO encadena el domiciliario (ese va por su propio widget). */}
       <DomicilioClienteModal open={modal === "domCliente"} orderId={order.id}
-        clients={clients}
-        onNewCustomer={() => setModal("newCustomer")}
+        clients={clients} currentClientId={order.client_id}
+        onNewCustomer={() => setModal("domRegistro")}
         onClose={() => setModal("")}
-        onDone={() => { load(); setModal("domDriver"); }} />
+        onDone={() => { load(); loadClients(); setModal(""); }} />
+      <DomicilioRegistroClienteModal open={modal === "domRegistro"} orderId={order.id}
+        onClose={() => setModal("domCliente")}
+        onDone={() => { load(); loadClients(); setModal(""); }} />
       <DomiciliarioModal open={modal === "domDriver"} orderId={order.id}
-        onClose={() => setModal("")} onDone={load} />
+        currentDriverId={order.delivery_personnel_id}
+        onClose={() => setModal("")} onDone={() => { load(); setModal(""); }} />
     </div>
   );
 }
@@ -597,6 +643,30 @@ function IconBtn({ label, onClick, disabled, children }: {
       }`}>
       {children}
     </button>
+  );
+}
+
+/* ───────── Widget de domicilio en el ticket (Polaris delivery-widget) ─────────
+   "Domicilio para: [cliente]" (lápiz = cambiar) y "Domiciliario: [nombre]"
+   (botón Asignar). Sin asignar muestra el texto tenue y el botón "Asignar". */
+function DeliveryWidget({ label, icon, name, assigned, actionLabel, onAction }: {
+  label: string; icon: React.ReactNode; name: string; assigned: boolean;
+  actionLabel?: string; onAction: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-bg-tertiary/50 p-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-blue/15 text-accent-blue">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">{label}</p>
+        <p className={`truncate text-sm font-bold ${assigned ? "" : "text-text-muted"}`}>{name}</p>
+      </div>
+      <button onClick={onAction} title={actionLabel ?? "Cambiar"} aria-label={actionLabel ?? "Cambiar"}
+        className="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-accent-blue transition hover:bg-accent-blue/15">
+        {actionLabel ?? <Pencil size={14} />}
+      </button>
+    </div>
   );
 }
 
@@ -1253,65 +1323,183 @@ function NewCustomerModal({ open, onClose, onCreated }: {
   );
 }
 
-/* ───────── Domicilio: cliente de la orden (Polaris abrirModalDomicilio) ───────── */
-function DomicilioClienteModal({ open, orderId, clients, onNewCustomer, onClose, onDone }: {
-  open: boolean; orderId: number; clients: Client[];
+/* ───────── Domicilio: selección de cliente (Polaris modal-cliente-domicilio) ─────────
+   Buscar por nombre/teléfono/dirección · tarjetas con teléfono+dirección ·
+   seleccionar (resalta) y luego "Asignar cliente" · "Omitir selección" cierra
+   sin asignar (cliente opcional) · "Registrar Cliente" abre el formulario
+   completo. NO encadena el domiciliario. */
+function DomicilioClienteModal({ open, orderId, clients, currentClientId, onNewCustomer, onClose, onDone }: {
+  open: boolean; orderId: number; clients: Client[]; currentClientId: number | null;
   onNewCustomer: () => void; onClose: () => void; onDone: () => void;
 }) {
   const toast = useToast();
   const [search, setSearch] = useState("");
-  useEffect(() => { if (open) setSearch(""); }, [open]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (open) { setSearch(""); setSelectedId(currentClientId); }
+  }, [open, currentClientId]);
 
+  const q = search.trim().toLowerCase();
   const filtered = clients.filter((c) =>
-    clientLabel(c).toLowerCase().includes(search.toLowerCase()) ||
-    c.document_id.includes(search));
+    clientLabel(c).toLowerCase().includes(q) ||
+    (c.phone ?? "").toLowerCase().includes(q) ||
+    (c.address ?? "").toLowerCase().includes(q));
 
-  async function pick(c: Client) {
+  async function assign() {
+    if (!selectedId) {
+      toast("error", "¡Atención! Seleccione un cliente");
+      return;
+    }
+    setSaving(true);
     try {
       await api(`/api/orders/${orderId}/delivery`, {
-        method: "PUT", body: { clientId: c.id },
+        method: "PUT", body: { clientId: selectedId },
       });
-      toast("success", "Cliente asignado correctamente");
+      toast("success", "Cliente guardado correctamente");
       onDone();
     } catch (e) {
       toast("error", e instanceof ApiError ? e.message : "No fue posible asignar el cliente");
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <Modal open={open} title="Cliente del domicilio" onClose={onClose}>
-      <p className="mb-3 text-sm text-text-secondary">
-        Esta orden es de la sala DOMICILIO: seleccione el cliente que recibe el pedido.
-      </p>
-      <Input placeholder="Buscar por nombre o documento…" value={search}
-        onChange={(e) => setSearch(e.target.value)} className="mb-3" />
-      <div className="mb-4 max-h-56 space-y-1 overflow-y-auto">
-        {filtered.map((c) => (
-          <button key={c.id} onClick={() => pick(c)}
-            className="flex w-full items-center justify-between rounded-lg p-2.5 text-left text-sm transition hover:bg-bg-tertiary">
-            <span className="font-semibold">{clientLabel(c)}</span>
-            <span className="text-xs text-text-muted">{c.document_id}</span>
-          </button>
-        ))}
+    <Modal open={open} title="🛵 Domicilio" onClose={onClose}>
+      <div className="mb-4 text-center">
+        <h3 className="text-base font-bold">Selección de Cliente</h3>
+        <p className="text-sm text-text-secondary">Busca y selecciona el cliente para el envío.</p>
+      </div>
+      <div className="relative mb-3">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+        <Input placeholder="Buscar por nombre, teléfono o dirección…" value={search}
+          onChange={(e) => setSearch(e.target.value)} className="!pl-9" />
+      </div>
+      <Button variant="ghost" className="mb-3 w-full" onClick={onNewCustomer}>
+        <UserPlus size={15} className="-mt-0.5 mr-1.5 inline" /> Registrar Cliente
+      </Button>
+      <div className="mb-4 max-h-72 space-y-2 overflow-y-auto">
+        {filtered.map((c) => {
+          const sel = c.id === selectedId;
+          return (
+            <button key={c.id} onClick={() => setSelectedId(c.id)}
+              className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+                sel ? "border-accent-blue bg-accent-blue/10" : "border-border-subtle hover:border-border-medium"
+              }`}>
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-blue/15 text-accent-blue">
+                <User size={18} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{clientLabel(c)}</p>
+                <p className="flex items-center gap-1 truncate text-xs text-text-muted">
+                  <Phone size={11} className="shrink-0" /> {c.phone || "—"}
+                </p>
+                {c.address && (
+                  <p className="flex items-center gap-1 truncate text-xs text-text-muted">
+                    <MapPin size={11} className="shrink-0" /> {c.address}
+                  </p>
+                )}
+              </div>
+              {sel && <Check size={18} className="shrink-0 text-accent-blue" />}
+            </button>
+          );
+        })}
         {filtered.length === 0 && (
           <p className="py-4 text-center text-sm text-text-muted">Sin resultados.</p>
         )}
       </div>
-      <Button variant="ghost" className="w-full" onClick={onNewCustomer}>
-        <UserPlus size={14} className="-mt-0.5 mr-1 inline" /> Registrar nuevo cliente
-      </Button>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>Omitir selección</Button>
+        <Button onClick={assign} disabled={saving}>Asignar cliente</Button>
+      </div>
     </Modal>
   );
 }
 
-/* ───────── Domicilio: domiciliario (Polaris abrirModalDomiciliario) ───────── */
-function DomiciliarioModal({ open, orderId, onClose, onDone }: {
+/* ───────── Domicilio: registro de cliente completo (Polaris
+   abrirModalRegistroClienteDomicilio = mismo formulario del módulo Clientes).
+   Al guardar, registra y asigna el cliente a la orden. ───────── */
+function DomicilioRegistroClienteModal({ open, orderId, onClose, onDone }: {
   open: boolean; orderId: number; onClose: () => void; onDone: () => void;
+}) {
+  const toast = useToast();
+  const [geo, setGeo] = useState<Geo>({ countries: [], departments: [], cities: [] });
+  const [form, setForm] = useState<FormState | null>(null);
+  const [alert, setAlert] = useState<Alert | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(null);
+    api<Geo>("/api/clients/geo")
+      .then((g) => { setGeo(g); setForm(emptyForm(g)); })
+      .catch(() => setForm(emptyForm({ countries: [], departments: [], cities: [] })));
+  }, [open]);
+
+  const set = (patch: Partial<FormState>) =>
+    setForm((f) => (f ? { ...f, ...patch } : f));
+
+  async function save() {
+    if (!form) return;
+    const missing = validateClientForm(form);
+    if (missing.length > 0) {
+      setAlert({ kind: "error", lines: missing });
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = { ...form, birthday: form.birthday || null };
+      const r = await api<{ id: number }>("/api/clients", { method: "POST", body });
+      // Polaris: tras registrar, el cliente queda asignado a la orden
+      await api(`/api/orders/${orderId}/delivery`, {
+        method: "PUT", body: { clientId: r.id },
+      });
+      toast("success", "Cliente guardado correctamente");
+      onDone();
+    } catch (e) {
+      setAlert({
+        kind: "error",
+        lines: [e instanceof ApiError ? e.message : "No fue posible registrar el cliente"],
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} title="Registrar Cliente" onClose={onClose} wide>
+      {form ? (
+        <>
+          <ClienteFormFields form={form} set={set} geo={geo} />
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+            <Button onClick={save} disabled={saving}>Guardar Cliente</Button>
+          </div>
+        </>
+      ) : (
+        <Loader label="Cargando formulario" />
+      )}
+      {alert && <PolarisAlert alert={alert} onClose={() => setAlert(null)} />}
+    </Modal>
+  );
+}
+
+/* ───────── Domicilio: domiciliario (Polaris modal-domiciliario) ─────────
+   Buscar por nombre/teléfono/placa · tarjetas con placa+empresa · seleccionar
+   y luego "Asignar domiciliario" · "Omitir selección" · "Nuevo domiciliario"
+   abre el registro rápido. */
+function DomiciliarioModal({ open, orderId, currentDriverId, onClose, onDone }: {
+  open: boolean; orderId: number; currentDriverId: number | null;
+  onClose: () => void; onDone: () => void;
 }) {
   const toast = useToast();
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [companies, setCompanies] = useState<{ id: number; name: string }[]>([]);
   const [registering, setRegistering] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ firstName: "", lastName: "", phone: "", plate: "", companyId: "" });
 
   const loadOptions = useCallback(() => {
@@ -1321,18 +1509,33 @@ function DomiciliarioModal({ open, orderId, onClose, onDone }: {
   }, []);
 
   useEffect(() => {
-    if (open) { loadOptions(); setRegistering(false); }
-  }, [open, loadOptions]);
+    if (open) {
+      loadOptions(); setRegistering(false); setSearch(""); setSelectedId(currentDriverId);
+    }
+  }, [open, currentDriverId, loadOptions]);
 
-  async function pick(d: Driver) {
+  const q = search.trim().toLowerCase();
+  const filtered = drivers.filter((d) =>
+    d.name.toLowerCase().includes(q) ||
+    (d.phone ?? "").toLowerCase().includes(q) ||
+    (d.plate ?? "").toLowerCase().includes(q));
+
+  async function assign() {
+    if (!selectedId) {
+      toast("error", "¡Atención! Seleccione un domiciliario");
+      return;
+    }
+    setSaving(true);
     try {
       await api(`/api/orders/${orderId}/delivery`, {
-        method: "PUT", body: { personnelId: d.id },
+        method: "PUT", body: { personnelId: selectedId },
       });
       toast("success", "Domiciliario asignado correctamente");
-      onDone(); onClose();
+      onDone();
     } catch (e) {
       toast("error", e instanceof ApiError ? e.message : "No fue posible asignar el domiciliario");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1352,27 +1555,51 @@ function DomiciliarioModal({ open, orderId, onClose, onDone }: {
   }
 
   return (
-    <Modal open={open} title="Domiciliario" onClose={onClose}>
+    <Modal open={open} title="🛵 Asignar domiciliario" onClose={onClose}>
       {!registering ? (
         <>
-          <div className="mb-4 max-h-56 space-y-1 overflow-y-auto">
-            {drivers.map((d) => (
-              <button key={d.id} onClick={() => pick(d)}
-                className="flex w-full items-center justify-between rounded-lg p-2.5 text-left text-sm transition hover:bg-bg-tertiary">
-                <span>
-                  <span className="block font-semibold">{d.name}</span>
-                  <span className="text-xs text-text-muted">{d.company_name} · {d.plate}</span>
-                </span>
-                <span className="text-xs text-text-muted">{d.phone}</span>
-              </button>
-            ))}
-            {drivers.length === 0 && (
+          <div className="mb-4 text-center">
+            <h3 className="text-base font-bold">Seleccionar domiciliario</h3>
+            <p className="text-sm text-text-secondary">Elige quién realizará este envío.</p>
+          </div>
+          <div className="relative mb-3">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <Input placeholder="Buscar por nombre, teléfono o placa…" value={search}
+              onChange={(e) => setSearch(e.target.value)} className="!pl-9" />
+          </div>
+          <div className="mb-4 max-h-72 space-y-2 overflow-y-auto">
+            {filtered.map((d) => {
+              const sel = d.id === selectedId;
+              return (
+                <button key={d.id} onClick={() => setSelectedId(d.id)}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+                    sel ? "border-accent-blue bg-accent-blue/10" : "border-border-subtle hover:border-border-medium"
+                  }`}>
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-blue/15 text-accent-blue">
+                    <Bike size={18} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold">{d.name}</p>
+                    <p className="flex items-center gap-1 truncate text-xs text-text-muted">
+                      <Phone size={11} className="shrink-0" /> {d.phone || "—"} · Placa: {d.plate || "—"}
+                    </p>
+                    <p className="truncate text-xs text-text-muted">{d.company_name}</p>
+                  </div>
+                  {sel && <Check size={18} className="shrink-0 text-accent-blue" />}
+                </button>
+              );
+            })}
+            {filtered.length === 0 && (
               <p className="py-4 text-center text-sm text-text-muted">No hay domiciliarios activos.</p>
             )}
           </div>
-          <Button variant="ghost" className="w-full" onClick={() => setRegistering(true)}>
+          <Button variant="ghost" className="mb-3 w-full" onClick={() => setRegistering(true)}>
             <UserPlus size={14} className="-mt-0.5 mr-1 inline" /> Nuevo domiciliario
           </Button>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Omitir selección</Button>
+            <Button onClick={assign} disabled={saving}>Asignar domiciliario</Button>
+          </div>
         </>
       ) : (
         <>
@@ -1405,7 +1632,7 @@ function DomiciliarioModal({ open, orderId, onClose, onDone }: {
           </Field>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setRegistering(false)}>Volver</Button>
-            <Button onClick={register}>Guardar</Button>
+            <Button onClick={register}>Guardar domiciliario</Button>
           </div>
         </>
       )}

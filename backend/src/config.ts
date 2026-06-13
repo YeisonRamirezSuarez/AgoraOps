@@ -45,6 +45,7 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl,
   dbSsl: resolveDbSsl(),
+  dbPoolMax: Number(process.env.DB_POOL_MAX ?? (isProd ? 5 : 10)),
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
