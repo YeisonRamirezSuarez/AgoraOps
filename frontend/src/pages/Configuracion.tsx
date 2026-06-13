@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { CrudPage } from "../components/CrudPage";
+import { SalaGrid } from "../components/SalaGrid";
+import { MesasGrid } from "../components/MesasGrid";
 import { EnConstruccion } from "../components/EnConstruccion";
 import { useTabParam } from "../lib/useTab";
 import { Badge, Button, Loader, PageHeader, Table, useToast } from "../components/ui";
@@ -22,36 +24,14 @@ const TABS = [
 
 export default function Configuracion() {
   const [tab, setTab] = useTabParam(TABS);
-  const [rooms, setRooms] = useState<{ id: number; name: string }[]>([]);
-
-  useEffect(() => {
-    api<{ id: number; name: string }[]>("/api/catalogs/rooms").then(setRooms).catch(() => {});
-  }, [tab]);
 
   return (
     <div className="fade-in-up">
       <PageHeader title={tab} subtitle="Configuración restaurante" />
 
-      {tab === "Sala del restaurante" && (
-        <CrudPage title="sala" endpoint="/api/catalogs/rooms"
-          fields={[
-            { name: "name", label: "Nombre", required: true },
-            { name: "is_active", label: "Estado", type: "checkbox" },
-          ]} />
-      )}
+      {tab === "Sala del restaurante" && <SalaGrid />}
 
-      {tab === "Mesas del restaurante" && (
-        <CrudPage title="mesa" endpoint="/api/catalogs/tables"
-          fields={[
-            {
-              name: "room_id", label: "Sala", type: "select", required: true,
-              options: rooms.map((r) => ({ value: r.id, label: r.name })),
-            },
-            { name: "number", label: "Número", type: "number", required: true, immutable: true },
-            { name: "seats", label: "Asientos", type: "number", required: true },
-            { name: "is_active", label: "Estado", type: "checkbox" },
-          ]} />
-      )}
+      {tab === "Mesas del restaurante" && <MesasGrid />}
 
       {/* §1.7.3: catálogo únicamente visual, no permite acciones */}
       {tab === "Etapas de reserva" && (
