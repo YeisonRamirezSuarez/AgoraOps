@@ -85,9 +85,5 @@ catalogsRouter.use("/inventory-products", crudRouter({
   orderBy: "name",
 }));
 
-// §1.8.2 Cajas (editar solo estado/nota y eliminar si nunca abierta — triggers BD)
-catalogsRouter.use("/cash-registers", crudRouter({
-  table: "cash_registers",
-  columns: ["name", "status", "note"],
-  immutable: ["name"],
-}));
+// §1.8.2 Cajas: ahora con auditoría y estado FUNCIONANDO/FALLANDO en
+// rutas dedicadas (GET/POST/PUT/DELETE /api/cash/registers en cash.ts).

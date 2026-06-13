@@ -67,16 +67,16 @@ export default function Configuracion() {
       {tab === "Denominación de moneda" && (
         <CrudPage title="denominación" endpoint="/api/catalogs/denominations"
           fields={[
-            { name: "value", label: "Valor", type: "money", required: true },
-            { name: "is_active", label: "Estado", type: "checkbox" },
+            { name: "value", label: "Denominación de moneda", type: "money", required: true, maxLength: 17 },
+            { name: "is_active", label: "Estado", type: "checkbox", trueLabel: "Activo", falseLabel: "Inactivo" },
           ]} />
       )}
 
       {tab === "Bancos para transferencia" && (
         <CrudPage title="banco" endpoint="/api/catalogs/banks"
           fields={[
-            { name: "name", label: "Nombre", required: true },
-            { name: "is_active", label: "Estado", type: "checkbox" },
+            { name: "name", label: "Nombre del banco", required: true, maxLength: 120 },
+            { name: "is_active", label: "Estado", type: "checkbox", trueLabel: "Activo", falseLabel: "Inactivo" },
           ]} />
       )}
 

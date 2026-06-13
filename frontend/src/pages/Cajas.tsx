@@ -14,8 +14,9 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { escHtml, printReceipt } from "../lib/printing";
+import { CajasGrid } from "../components/CajasGrid";
 import { CrudPage } from "../components/CrudPage";
-import { EnConstruccion } from "../components/EnConstruccion";
+import { DownloadPrintService } from "../components/DownloadPrintService";
 import { ParametersForm } from "../components/ParametersForm";
 import { useTabParam } from "../lib/useTab";
 import {
@@ -54,25 +55,9 @@ export default function Cajas() {
       <PageHeader title={tab} subtitle="Gestión de cajas" />
       {tab === "Configuración de parámetros" && <ParametersForm />}
       {tab === "Apertura / Cierre de cajas" && <SessionsTab />}
-      {tab === "Cajas" && (
-        <CrudPage
-          title="caja"
-          endpoint="/api/catalogs/cash-registers"
-          fields={[
-            { name: "name", label: "Nombre", required: true, immutable: true },
-            {
-              name: "status", label: "Estado", type: "select", required: true,
-              options: [{ value: "activa", label: "Activa" }, { value: "inactiva", label: "Inactiva" }],
-            },
-            { name: "note", label: "Nota" },
-          ]}
-        />
-      )}
+      {tab === "Cajas" && <CajasGrid />}
       {tab === "Reporte de cajas" && <ReportTab />}
-      {tab === "Descargar servicio de impresión" && (
-        <EnConstruccion titulo="Servicio de impresión"
-          nota="Instalador local para impresoras USB/Ethernet (manual §1.8.5) — servicio print-service del roadmap." />
-      )}
+      {tab === "Descargar servicio de impresión" && <DownloadPrintService />}
       {tab === "Configuración de impresoras" && (
         <CrudPage title="impresora" endpoint="/api/catalogs/printers"
           fields={[
@@ -137,10 +122,10 @@ function SessionsTab() {
 
   function exportCsv() {
     const headers = ["Nombre de la caja", "Abierta por", "Responsable de la caja",
-      "Dinero de apertura", "Total", "Estado", "Fecha de creación"];
+      "Dinero de apertura", "Total", "Estado", "Creado por", "Fecha de creación"];
     const lines = filtered.map((r) => [
       r.name, r.user_name ?? "", r.responsible_name ?? "", r.opening_amount ?? "",
-      r.current_total ?? "", "ABIERTO",
+      r.current_total ?? "", "ABIERTO", r.user_name ?? "",
       fmtDateTime(r.opened_at, ""),
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";"));
     const blob = new Blob(["﻿" + [headers.join(";"), ...lines].join("\r\n")],
@@ -173,7 +158,7 @@ function SessionsTab() {
 
       <Table
         headers={["", "Nombre de la caja", "Abierta por", "Responsable de la caja",
-          "Dinero de apertura", "Total", "Estado", "Fecha de creación",
+          "Dinero de apertura", "Total", "Estado", "Creado por", "Fecha de creación",
           "Registrar entrada", "Registrar salida"]}
         empty={slice.length === 0}
       >
@@ -192,6 +177,7 @@ function SessionsTab() {
             <td className="px-4 py-2">{cop.format(Number(r.opening_amount))}</td>
             <td className="px-4 py-2 font-semibold">{cop.format(Number(r.current_total))}</td>
             <td className="px-4 py-2"><Badge color="emerald">ABIERTO</Badge></td>
+            <td className="px-4 py-2">{r.user_name ?? "—"}</td>
             <td className="px-4 py-2 text-xs">
               {fmtDateTime(r.opened_at)}
             </td>
@@ -242,7 +228,7 @@ function OpenForm({ registers, onBack, onDone }: {
   }, []);
 
   // Solo cajas activas y sin sesión abierta
-  const available = registers.filter((r) => r.register_status === "activa" && !r.session_id);
+  const available = registers.filter((r) => r.register_status === "FUNCIONANDO" && !r.session_id);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -298,7 +284,7 @@ function OpenForm({ registers, onBack, onDone }: {
           </Select>
         </FormRow>
         <FormRow label="Dinero de la apertura">
-          <MoneyInput value={amount} onValueChange={setAmount} />
+          <MoneyInput value={amount} onValueChange={setAmount} maxLength={17} />
         </FormRow>
         <FormRow label="Estado">
           <Select value="ABIERTO" disabled>
@@ -306,13 +292,14 @@ function OpenForm({ registers, onBack, onDone }: {
           </Select>
         </FormRow>
         <FormRow label="Nota" required>
-          <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} required />
+          <TextArea rows={3} value={note} maxLength={250}
+            onChange={(e) => setNote(e.target.value)} required />
         </FormRow>
       </div>
       <p className="mt-2 text-xs font-medium text-accent-rose">* Campos obligatorios</p>
       {available.length === 0 && (
         <p className="mt-2 text-sm text-accent-amber">
-          No hay cajas disponibles para abrir (todas abiertas o inactivas).
+          No hay cajas disponibles para abrir (todas abiertas o fallando).
         </p>
       )}
     </form>
@@ -414,6 +401,10 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
   const diff = counted === "" ? 0 : Number(counted) - cashTotal;
 
   async function save() {
+    if (counted === "") {
+      toast("error", "El campo Efectivo contado es obligatorio para cerrar la caja");
+      return;
+    }
     if (!note.trim()) {
       toast("error", "El campo Nota es obligatorio para cerrar la caja");
       return;
@@ -422,7 +413,7 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
     try {
       await api(`/api/cash/sessions/${row.session_id}/close`, {
         method: "POST",
-        body: { countedCash: counted === "" ? null : Number(counted), note },
+        body: { countedCash: Number(counted), note },
       });
       toast("success", "Caja cerrada correctamente");
       onBack();
@@ -513,8 +504,7 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
         </p>
         <div className="mb-2 flex items-center gap-2">
           <span className="text-text-muted">$</span>
-          <MoneyInput placeholder="0,00" value={counted}
-            disabled={cashTotal <= 0}
+          <MoneyInput placeholder="0,00" value={counted} maxLength={16}
             onValueChange={setCounted} className="text-center" />
           <Info size={15} className="shrink-0 text-accent-orange" />
         </div>
@@ -531,7 +521,7 @@ function CloseView({ row, onBack }: { row: SessionRow; onBack: () => void }) {
         <p className="mb-1.5 text-sm font-semibold">
           Nota: <span className="text-accent-rose">*</span>
         </p>
-        <TextArea rows={3} placeholder="ESCRIBE UNA NOTA..." value={note}
+        <TextArea rows={3} placeholder="ESCRIBE UNA NOTA..." value={note} maxLength={255}
           onChange={(e) => setNote(e.target.value)} />
         <div className="mt-4 flex justify-center">
           <Button onClick={save} disabled={saving || !summary}>

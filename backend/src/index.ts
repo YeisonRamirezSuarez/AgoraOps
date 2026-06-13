@@ -13,7 +13,7 @@ import { catalogsRouter } from "./routes/catalogs.js";
 import { productsRouter } from "./routes/products.js";
 import { ordersRouter } from "./routes/orders.js";
 import { kitchenRouter } from "./routes/kitchen.js";
-import { cashRouter } from "./routes/cash.js";
+import { cashRouter, INSTALLERS_DIR } from "./routes/cash.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { eventsRouter } from "./routes/events.js";
 import { settingsRouter } from "./routes/settings.js";
@@ -33,6 +33,10 @@ app.use(express.json({ limit: "6mb" })); // imágenes de producto máx 5MB (§1.
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "agoraops-api" });
 });
+
+// Descargas del servicio de impresión (§1.8.5): los ZIP/instaladores de
+// print-service-installers se sirven aquí para "Descargar servicio de impresión".
+app.use("/print-service", express.static(INSTALLERS_DIR));
 
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);

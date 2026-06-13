@@ -7,12 +7,22 @@
  */
 import { Router } from "express";
 import { z } from "zod";
+import { readdirSync, statSync } from "node:fs";
+import { join, dirname, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { query, queryOne } from "../db.js";
 import { dbErrorMessage } from "../lib/crud.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const cashRouter = Router();
 cashRouter.use(requireAuth, requireAdmin);
+
+// Carpeta con los instaladores del servicio de impresión (servida estática
+// en /print-service desde index.ts). Resuelta relativa a la raíz de backend
+// (funciona tanto en src/ con tsx como en dist/).
+export const INSTALLERS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)), "..", "..", "print-service-installers",
+);
 
 /** Aislamiento multi-tenant: toda ruta con :id opera sobre una sesión de
  * caja; se valida una vez que pertenezca al tenant del JWT antes de
@@ -30,6 +40,126 @@ cashRouter.param("id", (req, res, next, id) => {
       next();
     })
     .catch(next);
+});
+
+/* ═══════════ Descargar servicio de impresión (§1.8.5) — réplica de Polaris
+   (blank_descarga_servicios): lista los instaladores disponibles en la
+   carpeta del servidor con su metadata. La descarga la sirve el estático
+   /print-service (index.ts). ═══════════ */
+cashRouter.get("/print-service", (_req, res) => {
+  let files: { name: string; size: number; type: string; date: string }[] = [];
+  try {
+    files = readdirSync(INSTALLERS_DIR)
+      .filter((n) => !n.startsWith(".") && n.toLowerCase() !== "readme.md")
+      .map((name) => {
+        const st = statSync(join(INSTALLERS_DIR, name));
+        return st.isFile()
+          ? {
+              name,
+              size: st.size,
+              type: (extname(name).slice(1) || "—").toUpperCase(),
+              date: st.mtime.toISOString(),
+            }
+          : null;
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null);
+  } catch {
+    files = []; // carpeta inexistente → sin archivos
+  }
+  const totalSize = files.reduce((s, f) => s + f.size, 0);
+  res.json({ files, count: files.length, totalSize });
+});
+
+/* ═════════════ Cajas (§1.8.2) — CRUD con auditoría, réplica de Polaris
+   (grid_public_cash_registers + form_public_cash_registers). El nombre es
+   inmutable; el estado solo cambia con la caja cerrada y solo se elimina si
+   nunca fue abierta (triggers de 00012). Estado: FUNCIONANDO/FALLANDO. ═══ */
+cashRouter.get("/registers", async (req, res) => {
+  const rows = await query(
+    `SELECT cr.id, cr.name, cr.status, cr.note,
+            bs.business_name AS restaurant_name,
+            cr.created_at, cr.updated_at,
+            cu.full_name AS created_by_name,
+            uu.full_name AS updated_by_name
+     FROM cash_registers cr
+     LEFT JOIN business_settings bs ON bs.tenant_id = cr.tenant_id
+     LEFT JOIN users cu ON cu.id = cr.created_by
+     LEFT JOIN users uu ON uu.id = cr.updated_by
+     WHERE cr.tenant_id = $1
+     ORDER BY cr.id`,
+    [req.user!.tenantId],
+  );
+  res.json(rows);
+});
+
+const REGISTER_STATUS = z.enum(["FUNCIONANDO", "FALLANDO"]);
+
+cashRouter.post("/registers", async (req, res) => {
+  const schema = z.object({
+    name: z.string().trim().min(1, "Nombre de la caja: Campo obligatorio").max(50),
+    status: REGISTER_STATUS.default("FUNCIONANDO"),
+    note: z.string().trim().min(1, "Nota: Campo obligatorio").max(250),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  const { name, status, note } = parsed.data;
+  try {
+    const row = await queryOne(
+      `INSERT INTO cash_registers (tenant_id, name, status, note, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.user!.tenantId, name, status, note, req.user!.id],
+    );
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+// El nombre es inmutable (Polaris): solo se actualizan estado y nota.
+cashRouter.put("/registers/:rid", async (req, res) => {
+  const schema = z.object({
+    status: REGISTER_STATUS,
+    note: z.string().trim().min(1, "Nota: Campo obligatorio").max(250),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  try {
+    const row = await queryOne(
+      `UPDATE cash_registers SET status = $3, note = $4,
+              updated_by = $5, updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+      [req.params.rid, req.user!.tenantId, parsed.data.status, parsed.data.note, req.user!.id],
+    );
+    if (!row) {
+      res.status(404).json({ error: "Caja no encontrada" });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
+});
+
+cashRouter.delete("/registers/:rid", async (req, res) => {
+  try {
+    const row = await queryOne(
+      "DELETE FROM cash_registers WHERE id = $1 AND tenant_id = $2 RETURNING id",
+      [req.params.rid, req.user!.tenantId],
+    );
+    if (!row) {
+      res.status(404).json({ error: "Caja no encontrada" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: dbErrorMessage(err) });
+  }
 });
 
 /** Cajas con su sesión abierta (si existe) + total en efectivo actual
@@ -130,12 +260,15 @@ cashRouter.get("/sessions/:id/summary", async (req, res) => {
 /** Cerrar caja: efectivo contado + nota obligatoria (§1.8.3). */
 cashRouter.post("/sessions/:id/close", async (req, res) => {
   const schema = z.object({
-    countedCash: z.number().min(0).nullable(),
-    note: z.string().min(1, "El campo Nota es obligatorio"),
+    countedCash: z.number({
+      required_error: "El campo Efectivo contado es obligatorio para cerrar la caja",
+      invalid_type_error: "El campo Efectivo contado es obligatorio para cerrar la caja",
+    }).min(0),
+    note: z.string().min(1, "El campo Nota es obligatorio para cerrar la caja"),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "El campo Nota es obligatorio para cerrar la caja" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
     return;
   }
   try {
