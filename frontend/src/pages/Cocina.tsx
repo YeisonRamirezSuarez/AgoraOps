@@ -121,7 +121,7 @@ export default function Cocina() {
                       <span className="flex min-w-0 items-center gap-3">
                         <input type="checkbox" checked={isChecked}
                           onChange={() => toggle(item.ids)}
-                          className="h-4 w-4 shrink-0 accent-[hsl(199_89%_48%)]" />
+                          className="h-4 w-4 shrink-0 accent-[var(--color-accent-blue)]" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold uppercase">
                             {item.quantity}x {item.product_name}

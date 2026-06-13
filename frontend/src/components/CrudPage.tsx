@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Inbox, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import {
-  Button, ConfirmDialog, cop, FormRow, Input, MoneyInput, Select, useToast,
+  Button, ConfirmDialog, cop, FormRow, Input, Loader, MoneyInput, Select, useToast,
 } from "./ui";
 
 export interface CrudField {
@@ -53,6 +53,7 @@ export function CrudPage({
 }) {
   const toast = useToast();
   const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true); // solo la carga inicial
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -65,10 +66,14 @@ export function CrudPage({
   const load = useCallback(() => {
     api<Row[]>(endpoint)
       .then(setRows)
-      .catch((e) => toast("error", e instanceof ApiError ? e.message : "Error al cargar"));
+      .catch((e) => toast("error", e instanceof ApiError ? e.message : "Error al cargar"))
+      .finally(() => setLoading(false));
   }, [endpoint, toast]);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    setLoading(true);
+    load();
+  }, [load]);
 
   // Búsqueda rápida (§1.4): coincidencias en todos los campos relevantes
   const filtered = useMemo(() => {
@@ -197,13 +202,13 @@ export function CrudPage({
           <label className="flex items-center gap-1">
             <input type="radio" checked={!!v} disabled={disabled}
               onChange={() => setEditing({ ...editing!, [f.name]: true })}
-              className="h-3.5 w-3.5 accent-[hsl(199_89%_48%)]" />
+              className="h-3.5 w-3.5 accent-[var(--color-accent-blue)]" />
             Sí
           </label>
           <label className="flex items-center gap-1">
             <input type="radio" checked={!v} disabled={disabled}
               onChange={() => setEditing({ ...editing!, [f.name]: false })}
-              className="h-3.5 w-3.5 accent-[hsl(199_89%_48%)]" />
+              className="h-3.5 w-3.5 accent-[var(--color-accent-blue)]" />
             No
           </label>
         </span>
@@ -276,7 +281,7 @@ export function CrudPage({
                 ) : f.type === "checkbox" ? (
                   <input type="checkbox" checked={!!editing[f.name]} disabled={disabled}
                     onChange={(e) => setEditing({ ...editing, [f.name]: e.target.checked })}
-                    className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+                    className="h-4 w-4 accent-[var(--color-accent-blue)]" />
                 ) : f.type === "money" ? (
                   <MoneyInput value={String(editing[f.name] ?? "")}
                     required={f.required} disabled={disabled}
@@ -314,7 +319,9 @@ export function CrudPage({
       </div>
 
       {/* Sin registros: no se muestra la tabla, solo el estado vacío */}
-      {filtered.length === 0 && !editing ? (
+      {loading ? (
+        <Loader label={`Cargando ${title}`} />
+      ) : filtered.length === 0 && !editing ? (
         <div className="glass grid place-items-center rounded-2xl py-14 text-text-muted">
           <Inbox size={32} className="mb-2 opacity-60" />
           <p className="text-sm">No hay registros para mostrar</p>

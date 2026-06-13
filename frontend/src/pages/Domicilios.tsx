@@ -500,7 +500,7 @@ export function DomiciliosPage() {
                 onClick={() => setSelectedCompanyId(selectedCompanyId === c.id ? null : c.id)}
                 className={`cursor-pointer rounded-xl border p-3 transition hover:-translate-y-px hover:shadow-md ${
                   selectedCompanyId === c.id
-                    ? "border-accent-blue shadow-[0_0_16px_hsl(199_89%_48%/0.2)]"
+                    ? "border-accent-blue shadow-[0_0_16px_var(--accent-glow)]"
                     : "border-border-subtle"
                 }`}>
                 <div className="mb-2 flex items-center justify-between gap-2">

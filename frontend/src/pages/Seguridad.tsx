@@ -193,7 +193,7 @@ function UsersTab() {
             <label className="flex items-center gap-2 text-sm text-text-secondary">
               <input type="checkbox" checked={!!editing.is_worker}
                 onChange={(e) => setEditing({ ...editing, is_worker: e.target.checked })}
-                className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+                className="h-4 w-4 accent-[var(--color-accent-blue)]" />
               Requiere horario asignado (§1.13)
             </label>
           </FormRow>

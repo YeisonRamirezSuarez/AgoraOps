@@ -3,11 +3,12 @@
  * (credenciales inválidas / restaurante inactivo / usuario bloqueado),
  * toggle de contraseña y redirección si debe cambiar la clave.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { ApiError } from "../lib/api";
+import { applyPalette, DEFAULT_PALETTE } from "../shared/constants/palettes";
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,13 +19,22 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // El login es compartido por todos los tenants: restaurar la paleta base
+  useEffect(() => applyPalette(DEFAULT_PALETTE), []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const { mustChangePassword } = await login(username, password);
-      navigate(mustChangePassword ? "/cambiar-contrasena?forzado=1" : "/dashboard");
+      const { mustChangePassword, isSuperAdmin } = await login(username, password);
+      navigate(
+        mustChangePassword
+          ? "/primer-ingreso"
+          : isSuperAdmin
+            ? "/superadmin"
+            : "/dashboard",
+      );
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "No fue posible iniciar sesión.",
@@ -65,7 +75,7 @@ export default function Login() {
               autoCapitalize="none"
               spellCheck={false}
               required
-              className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_hsl(199_89%_48%/0.2)]"
+              className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_var(--accent-glow)]"
             />
           </div>
 
@@ -80,7 +90,7 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 pr-11 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_hsl(199_89%_48%/0.2)]"
+                className="w-full rounded-lg border border-border-subtle bg-bg-tertiary px-4 py-3 pr-11 outline-none transition focus:border-accent-blue focus:shadow-[0_0_20px_var(--accent-glow)]"
               />
               <button
                 type="button"
@@ -96,7 +106,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover py-3 font-semibold text-white shadow-[0_0_20px_hsl(199_89%_48%/0.2)] transition hover:scale-[1.02] hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+            className="w-full rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover py-3 font-semibold text-white shadow-[0_0_20px_var(--accent-glow)] transition hover:scale-[1.02] hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
           >
             {loading ? "Iniciando sesión…" : "Iniciar sesión"}
           </button>

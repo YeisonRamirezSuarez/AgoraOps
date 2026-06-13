@@ -36,7 +36,9 @@ export async function api<T = unknown>(
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
-  if (res.status === 401) {
+  // 401 = sesión vencida… excepto en el propio login, donde significa
+  // credenciales incorrectas y debe mostrarse el mensaje del servidor.
+  if (res.status === 401 && !path.startsWith("/api/auth/login")) {
     setToken(null);
     window.location.href = "/login";
     throw new ApiError("Sesión expirada", 401);

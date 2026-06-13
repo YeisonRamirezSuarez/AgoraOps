@@ -30,6 +30,15 @@
   --font-sans: "Nunito Sans", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+/* Variables derivadas de la paleta del establecimiento (Multicomercio).
+   applyPalette() las sobrescribe en :root; estos son los valores celeste
+   por defecto (login y panel Super Admin). */
+:root {
+  --accent-glow: hsl(197 92% 55% / 0.2);        /* brillo de foco/botones */
+  --accent-glow-strong: hsl(197 92% 55% / 0.45); /* brillo intenso (CTA) */
+  --page-tint: hsl(199 90% 95%);                 /* tinte del fondo de página */
+}
+
 html,
 body,
 #root {
@@ -37,7 +46,7 @@ body,
 }
 
 body {
-  background: radial-gradient(ellipse at bottom, hsl(199 90% 95%), hsl(220 20% 96%) 65%);
+  background: radial-gradient(ellipse at bottom, var(--page-tint), hsl(220 20% 96%) 65%);
   background-attachment: fixed;
   color: var(--color-text-primary);
   font-family: var(--font-sans);
@@ -69,7 +78,7 @@ body {
 @keyframes pulse-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 hsl(197 92% 55% / 0.35);
+    box-shadow: 0 0 0 0 var(--accent-glow-strong);
   }
   50% {
     box-shadow: 0 0 0 8px transparent;
@@ -118,17 +127,48 @@ body {
 }
 
 /* Sidebar celeste (distribución estilo Polaris): gradiente vertical
-   pronunciado como el naranja→rojo de Polaris, en la identidad azul */
+   pronunciado como el naranja→rojo de Polaris, en la identidad azul.
+   Las paradas son variables para que la paleta del establecimiento
+   (Multicomercio, shared/constants/palettes.ts) pueda sobrescribirlas. */
 .sidebar-polaris {
   background: linear-gradient(
     180deg,
-    hsl(195 95% 58%) 0%,
-    hsl(200 92% 50%) 40%,
-    hsl(208 88% 44%) 75%,
-    hsl(214 85% 38%) 100%
+    var(--sidebar-g1, hsl(195 95% 58%)) 0%,
+    var(--sidebar-g2, hsl(200 92% 50%)) 40%,
+    var(--sidebar-g3, hsl(208 88% 44%)) 75%,
+    var(--sidebar-g4, hsl(214 85% 38%)) 100%
   );
   border-right: none;
-  box-shadow: 2px 0 12px hsl(202 80% 35% / 0.25);
+  box-shadow: 2px 0 12px hsl(220 30% 25% / 0.25);
+}
+
+@media (min-width: 768px) {
+  .sidebar-polaris {
+    box-shadow: none;
+  }
+}
+
+.topbar-polaris {
+  background: linear-gradient(
+    90deg,
+    var(--sidebar-g1, hsl(195 95% 58%)) 0%,
+    var(--sidebar-g2, hsl(200 92% 50%)) 55%,
+    var(--sidebar-g3, hsl(208 88% 44%)) 100%
+  );
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Sidebar del panel Super Admin: oscuro fijo, para distinguir el panel
+   de gestión de establecimientos del POS de cada restaurante */
+.sidebar-super {
+  background: linear-gradient(
+    180deg,
+    hsl(225 25% 24%) 0%,
+    hsl(228 28% 17%) 55%,
+    hsl(232 30% 11%) 100%
+  );
+  border-right: none;
+  box-shadow: 2px 0 12px hsl(230 30% 8% / 0.4);
 }
 
 /* Dashboard §1.5: barras que crecen desde 0 (Polaris growBarV) */
@@ -158,4 +198,54 @@ body {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   letter-spacing: 0.15em;
+}
+
+/* ══════ Loader global (plato + cubiertos, color del tema) ══════
+   Anillo girando alrededor de un "plato" con cubiertos que laten.
+   Usa las variables de la paleta del establecimiento. */
+@keyframes loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.loader-ring {
+  border: 5px solid var(--accent-glow);
+  border-top-color: var(--color-accent-blue);
+  border-radius: 9999px;
+  animation: loader-spin 0.9s linear infinite;
+}
+@keyframes loader-utensils {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.18) rotate(-10deg);
+  }
+}
+.loader-utensils {
+  animation: loader-utensils 1.4s ease-in-out infinite;
+}
+@keyframes loader-dots {
+  0%,
+  20% {
+    content: "";
+  }
+  40% {
+    content: ".";
+  }
+  60% {
+    content: "..";
+  }
+  80%,
+  100% {
+    content: "...";
+  }
+}
+.loader-dots::after {
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  content: "...";
+  animation: loader-dots 1.4s steps(1) infinite;
 }

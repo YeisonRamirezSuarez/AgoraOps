@@ -72,6 +72,9 @@ authRouter.post("/login", async (req, res) => {
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return invalid();
 
+  // Última conexión (consumo por establecimiento en el panel Super Admin)
+  await query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
+
   const token = signToken({
     id: user.id,
     tenantId: user.tenant_id,
@@ -80,6 +83,7 @@ authRouter.post("/login", async (req, res) => {
     groupName: user.group_name,
     roleType: user.role_type,
     isSuperAdmin: user.is_super_admin,
+    mustChangePassword: user.must_change_password,
   });
 
   res.json({
@@ -152,9 +156,29 @@ authRouter.post("/change-password", requireAuth, async (req, res) => {
     [newHash, req.user!.id],
   );
 
-  res.json({ ok: true });
+  // Token nuevo sin la marca de clave temporal (el anterior queda bloqueado
+  // por requireAuth). Se reconstruye el payload sin iat/exp del JWT viejo.
+  const u = req.user!;
+  const token = signToken({
+    id: u.id,
+    tenantId: u.tenantId,
+    username: u.username,
+    fullName: u.fullName,
+    groupName: u.groupName,
+    roleType: u.roleType,
+    isSuperAdmin: u.isSuperAdmin,
+    mustChangePassword: false,
+  });
+
+  res.json({ ok: true, token });
 });
 
-authRouter.get("/me", requireAuth, (req, res) => {
-  res.json(req.user);
+authRouter.get("/me", requireAuth, async (req, res) => {
+  // must_change_password autoritativo de BD: cubre tokens viejos y claves
+  // restablecidas por el Super Admin durante una sesión activa.
+  const row = await queryOne<{ must_change_password: boolean }>(
+    "SELECT must_change_password FROM users WHERE id = $1",
+    [req.user!.id],
+  );
+  res.json({ ...req.user, mustChangePassword: row?.must_change_password ?? false });
 });

@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { api, ApiError, subscribeEvents } from "../lib/api";
 import {
-  Badge, Button, cop, Field, Input, Modal, Select, TextArea, useToast,
+  Badge, Button, cop, Field, Input, Loader, Modal, Select, TextArea, useToast,
 } from "../components/ui";
 import {
   isCartStatus, isFinished, isInKitchen, KITCHEN_STATUS_LABELS,
@@ -253,7 +253,7 @@ export default function Orden() {
     }
   }
 
-  if (!order) return <p className="text-text-muted">Cargando orden…</p>;
+  if (!order) return <Loader label="Cargando orden" />;
 
   const itemCount = activeItems.reduce((s, i) => s + i.quantity, 0);
 
@@ -451,7 +451,7 @@ export default function Orden() {
               <button key={c} onClick={() => setCategory(c)}
                 className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition sm:py-1.5 ${
                   c === category
-                    ? "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_12px_hsl(199_89%_48%/0.25)]"
+                    ? "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_12px_var(--accent-glow)]"
                     : "glass text-text-secondary hover:text-text-primary"
                 }`}>
                 {c}
@@ -493,7 +493,7 @@ export default function Orden() {
       {/* ══ Barra carrito fija (móviles) ══ */}
       <div className="fixed inset-x-0 bottom-0 z-40 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] lg:hidden">
         <button onClick={() => setSheetOpen(true)}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-accent-blue to-accent-blue-hover px-5 py-3 text-white shadow-[0_4px_20px_hsl(199_89%_48%/0.45)] transition active:scale-[0.98]">
+          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-accent-blue to-accent-blue-hover px-5 py-3 text-white shadow-[0_4px_20px_var(--accent-glow-strong)] transition active:scale-[0.98]">
           <span className="flex min-w-0 items-center gap-3">
             <ShoppingCart size={22} className="shrink-0" />
             <span className="min-w-0 text-left leading-tight">
@@ -1043,7 +1043,7 @@ function TransferModal({ open, order, items, onClose, onDone }: {
             <input type="checkbox"
               checked={selected.length === items.length && items.length > 0}
               onChange={(e) => setSelected(e.target.checked ? items.map((i) => i.id) : [])}
-              className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+              className="h-4 w-4 accent-[var(--color-accent-blue)]" />
             Producto / Detalles
           </label>
           <div className="mb-4 max-h-52 space-y-1 overflow-y-auto">
@@ -1053,7 +1053,7 @@ function TransferModal({ open, order, items, onClose, onDone }: {
                   <input type="checkbox" checked={selected.includes(i.id)}
                     onChange={(e) => setSelected(e.target.checked
                       ? [...selected, i.id] : selected.filter((x) => x !== i.id))}
-                    className="h-4 w-4 accent-[hsl(199_89%_48%)]" />
+                    className="h-4 w-4 accent-[var(--color-accent-blue)]" />
                   <span className="font-semibold">{i.product_name}</span>
                 </span>
                 <span className="font-bold">{i.quantity}</span>

@@ -64,7 +64,7 @@ export function MenuPage() {
           <button key={c} onClick={() => setCategory(c)}
             className={`rounded-lg px-4 py-2 text-sm font-semibold uppercase tracking-wide transition ${
               c === category
-                ? "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_14px_hsl(199_89%_48%/0.25)]"
+                ? "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_14px_var(--accent-glow)]"
                 : "glass text-text-secondary hover:text-text-primary"
             }`}>
             {c}

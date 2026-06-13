@@ -1,7 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { ToastProvider } from "./components/ui";
+import { Loader, ToastProvider } from "./components/ui";
 import Layout from "./components/Layout";
+import SuperAdminLayout from "./components/SuperAdminLayout";
+import SuperDashboard from "./pages/superadmin/SuperDashboard";
+import Establecimientos from "./pages/superadmin/Establecimientos";
+import EstablecimientoNuevo from "./pages/superadmin/EstablecimientoNuevo";
+import EstablecimientoDetalle from "./pages/superadmin/EstablecimientoDetalle";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Mesas from "./pages/Mesas";
@@ -21,17 +26,39 @@ import { ClientesPage } from "./pages/Clientes";
 import { DomiciliosPage } from "./pages/Domicilios";
 import { ReservacionesPage } from "./pages/Reservaciones";
 
+function Loading() {
+  return <Loader full />;
+}
+
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="grid min-h-[100dvh] place-items-center text-text-muted">
-        Cargando…
-      </div>
-    );
-  }
+  if (loading) return <Loading />;
   if (!user) return <Navigate to="/login" replace />;
+  // Clave temporal: no se puede usar nada hasta cambiarla (sin menús)
+  if (user.mustChangePassword) return <Navigate to="/primer-ingreso" replace />;
+  // El Super Admin no opera el POS (no tiene tenant): su panel es /superadmin
+  if (user.isSuperAdmin) return <Navigate to="/superadmin" replace />;
   return <>{children}</>;
+}
+
+function SuperProtected({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Loading />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.mustChangePassword) return <Navigate to="/primer-ingreso" replace />;
+  if (!user.isSuperAdmin) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+/** Primer ingreso: solo el cambio de contraseña, a pantalla completa. */
+function FirstLoginGate() {
+  const { user, loading } = useAuth();
+  if (loading) return <Loading />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.mustChangePassword) {
+    return <Navigate to={user.isSuperAdmin ? "/superadmin" : "/dashboard"} replace />;
+  }
+  return <CambiarContrasena forzado />;
 }
 
 export default function App() {
@@ -41,6 +68,22 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/primer-ingreso" element={<FirstLoginGate />} />
+            <Route
+              path="/superadmin"
+              element={
+                <SuperProtected>
+                  <SuperAdminLayout />
+                </SuperProtected>
+              }
+            >
+              <Route index element={<Navigate to="/superadmin/dashboard" replace />} />
+              <Route path="dashboard" element={<SuperDashboard />} />
+              <Route path="establecimientos" element={<Establecimientos />} />
+              <Route path="establecimientos/nuevo" element={<EstablecimientoNuevo />} />
+              <Route path="establecimientos/:id" element={<EstablecimientoDetalle />} />
+              <Route path="cambiar-contrasena" element={<CambiarContrasena />} />
+            </Route>
             <Route
               path="/"
               element={

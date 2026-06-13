@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { escHtml, printReceipt } from "../lib/printing";
-import { Badge, Button, cop, Field, Input, MoneyInput, Select, useToast } from "../components/ui";
+import { Badge, Button, cop, Field, Input, Loader, MoneyInput, Select, useToast } from "../components/ui";
 import type { Order, OrderItem } from "./Orden";
 
 interface PaymentOptions {
@@ -279,7 +279,7 @@ ${voucher.payments.map((p) =>
     finish();
   }
 
-  if (!order || !options) return <p className="text-text-muted">Cargando…</p>;
+  if (!order || !options) return <Loader label="Cargando cuenta" />;
 
   const singleLine = lines[0];
   const singleIsCash = methodName(singleLine?.method_id ?? "") === "EFECTIVO";
