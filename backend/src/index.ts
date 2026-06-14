@@ -24,6 +24,7 @@ import { clientsRouter } from "./routes/clients.js";
 import { deliveryRouter } from "./routes/delivery.js";
 import { schedulesRouter } from "./routes/schedules.js";
 import { superadminRouter } from "./routes/superadmin.js";
+import { publicRouter } from "./routes/public.js";
 
 const app = express();
 
@@ -37,6 +38,9 @@ app.get("/api/health", (_req, res) => {
 // Descargas del servicio de impresión (§1.8.5): los ZIP/instaladores de
 // print-service-installers se sirven aquí para "Descargar servicio de impresión".
 app.use("/print-service", express.static(INSTALLERS_DIR));
+
+// Menú público (§1.6.2): SIN auth, lo consume la página del QR de las mesas.
+app.use("/api/public", publicRouter);
 
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);

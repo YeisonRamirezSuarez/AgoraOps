@@ -10,8 +10,22 @@ import { z } from "zod";
 import { query, queryOne } from "../db.js";
 import { dbErrorMessage } from "../lib/crud.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
+import { signTenant } from "../lib/publicToken.js";
 
 export const settingsRouter = Router();
+
+/** URL estable del menú público para generar el QR de las mesas (§1.6.2).
+ * Antes del guard de admin: la pantalla de QR la puede ver cualquier
+ * usuario autenticado. Devuelve el tenant y su `code` (HMAC estable); el
+ * frontend arma `${origin}/m/<tenantId>?c=<code>`. */
+settingsRouter.get("/menu-qr", requireAuth, (req, res) => {
+  const tenantId = req.user!.tenantId;
+  if (!tenantId) {
+    res.status(404).json({ error: "Sin establecimiento" });
+    return;
+  }
+  res.json({ tenantId, code: signTenant(tenantId) });
+});
 
 /** Branding del establecimiento (nombre, logo y paleta de colores).
  * Registrado ANTES del guard de administrador: lo necesita cualquier
@@ -148,10 +162,12 @@ settingsRouter.put("/payment-methods", async (req, res) => {
           "DELETE FROM payment_method_banks WHERE payment_method_id = $1",
           [m.id],
         );
-        for (const bankId of m.bank_ids) {
+        if (m.bank_ids.length > 0) {
+          // Un INSERT por lote (unnest) en vez de uno por banco.
           await query(
-            "INSERT INTO payment_method_banks (payment_method_id, bank_id) VALUES ($1, $2)",
-            [m.id, bankId],
+            `INSERT INTO payment_method_banks (payment_method_id, bank_id)
+             SELECT $1, x.bank_id FROM unnest($2::int[]) AS x(bank_id)`,
+            [m.id, m.bank_ids],
           );
         }
       }
@@ -187,10 +203,12 @@ settingsRouter.put("/payment-methods/:id", async (req, res) => {
         "DELETE FROM payment_method_banks WHERE payment_method_id = $1",
         [req.params.id],
       );
-      for (const bankId of parsed.data.bank_ids) {
+      if (parsed.data.bank_ids.length > 0) {
+        // Un INSERT por lote (unnest) en vez de uno por banco.
         await query(
-          "INSERT INTO payment_method_banks (payment_method_id, bank_id) VALUES ($1, $2)",
-          [req.params.id, bankId],
+          `INSERT INTO payment_method_banks (payment_method_id, bank_id)
+           SELECT $1, x.bank_id FROM unnest($2::int[]) AS x(bank_id)`,
+          [req.params.id, parsed.data.bank_ids],
         );
       }
     }
@@ -202,9 +220,10 @@ settingsRouter.put("/payment-methods/:id", async (req, res) => {
 
 /**
  * Prioridad del menú (§1.7.6): categorías favoritas visibles por día de
- * semana (0=domingo … 6=sábado). Al servir el menú (GET /products/menu/*),
- * si un día tiene favoritas configuradas solo se muestran esas categorías;
- * si no tiene ninguna, se muestran todas. Origen Polaris: prioridad_menu.
+ * semana (0=domingo … 6=sábado). Al servir el menú (GET /products/menu/*)
+ * solo se muestran las categorías con prioridad para ese día; un día sin
+ * prioridades configuradas no muestra ninguna categoría (menú vacío).
+ * Origen Polaris: prioridad_menu.
  */
 settingsRouter.get("/menu-priority", async (req, res) => {
   const rows = await query<{ weekday: number; category_id: number }>(
@@ -231,19 +250,22 @@ settingsRouter.put("/menu-priority", async (req, res) => {
   const { weekdays, categoryIds } = parsed.data;
   try {
     // Reemplaza las favoritas de cada día seleccionado (sort_order = posición).
-    // Lista vacía = el día vuelve a mostrar todas las categorías.
+    // Lista vacía = el día queda sin prioridades y su menú no muestra
+    // ninguna categoría (no "muestra todas"): ver GET /products/menu/*.
     await query(
       "DELETE FROM menu_priority WHERE tenant_id = $1 AND weekday = ANY($2::int[])",
       [req.user!.tenantId, weekdays],
     );
-    for (const weekday of weekdays) {
-      for (let i = 0; i < categoryIds.length; i++) {
-        await query(
-          `INSERT INTO menu_priority (tenant_id, weekday, category_id, sort_order)
-           VALUES ($1, $2, $3, $4)`,
-          [req.user!.tenantId, weekday, categoryIds[i], i],
-        );
-      }
+    if (categoryIds.length > 0) {
+      // Inserta todas las (día × categoría) en un solo viaje; ORDINALITY da el
+      // sort_order (posición 0-based) en vez de un INSERT por celda.
+      await query(
+        `INSERT INTO menu_priority (tenant_id, weekday, category_id, sort_order)
+         SELECT $1, w.weekday, c.category_id, c.ord - 1
+         FROM unnest($2::int[]) AS w(weekday)
+         CROSS JOIN unnest($3::int[]) WITH ORDINALITY AS c(category_id, ord)`,
+        [req.user!.tenantId, weekdays, categoryIds],
+      );
     }
     res.json({ ok: true });
   } catch (err) {

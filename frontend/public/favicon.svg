@@ -1,10 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#23BAF6" />
-      <stop offset="1" stop-color="#0F92F0" />
+    <linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#2ec7fa" />
+      <stop offset=".5" stop-color="#0d77d3" />
+      <stop offset="1" stop-color="#0f56b3" />
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)" />
-  <text x="32" y="45" font-family="'Segoe UI', sans-serif" font-size="38" font-weight="700" fill="#fff" text-anchor="middle">A</text>
+  <rect width="64" height="64" rx="14" fill="url(#bg)" />
+  <!-- Marca AgoraOps (A + nodo + flecha) en blanco, escalada y centrada -->
+  <g transform="translate(11.4,10) scale(0.344)" fill="#fff" stroke="#fff">
+    <path d="M60 30 L106 114 L82 114 L60 66 L38 114 L14 114 Z" stroke="none" />
+    <path d="M22 100 C 46 92 54 78 66 64 C 78 50 86 44 96 35" fill="none" stroke-width="13" stroke-linecap="round" />
+    <path d="M108.6 23.6 L104.7 44.7 L87.3 25.3 Z" stroke="none" />
+    <circle cx="60" cy="26" r="13" fill="none" stroke-width="5" />
+    <circle cx="60" cy="26" r="5.5" stroke="none" />
+  </g>
 </svg>

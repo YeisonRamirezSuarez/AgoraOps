@@ -291,7 +291,7 @@ function ObjetivosTab() {
    Flujo Polaris: (1) tabla de días con checkboxes → "Seleccionar";
    (2) doble lista Disponibles ↔ Favoritas con flechas → "Guardar".
    Si un día tiene categorías favoritas, el menú de ese día solo muestra
-   esas categorías; si no tiene ninguna, muestra todas. */
+   esas categorías; si no tiene ninguna, no muestra nada (menú vacío). */
 const WEEKDAYS = [
   { value: 1, label: "Lunes" },
   { value: 2, label: "Martes" },

@@ -49,4 +49,19 @@ export const config = {
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  // URL pública del frontend: base del enlace de restablecimiento del correo.
+  // Derivada directamente del primer origen en CORS_ORIGIN para evitar variables redundantes.
+  appUrl:
+    process.env.CORS_ORIGIN?.split(",")[0]?.trim() ??
+    "http://localhost:5173",
+  // SMTP para el correo de recuperación. Si no se configura, el mailer cae a
+  // modo dev (registra el enlace en consola) y la app sigue funcionando.
+  mail: {
+    host: process.env.SMTP_HOST ?? "",
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === "true",
+    user: process.env.SMTP_USER ?? "",
+    pass: process.env.SMTP_PASS ?? "",
+    from: process.env.MAIL_FROM ?? "AgoraOps <no-reply@agoraops.app>",
+  },
 };

@@ -3,10 +3,11 @@
  * solo lectura §1.6.1), QR (§1.6.2), Reservaciones (§1.6.5), Clientes
  * (§1.6.6) y Gestión de domicilios (Fase 4).
  */
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, QrCode, Search, UtensilsCrossed } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Download, Search, UtensilsCrossed } from "lucide-react";
+import QRCode from "qrcode";
 import { api } from "../lib/api";
-import { cop, Input, PageHeader } from "../components/ui";
+import { Button, cop, Input, PageHeader } from "../components/ui";
 
 interface MenuProduct {
   id: number; name: string; description: string | null;
@@ -127,18 +128,57 @@ export function MenuPage() {
   );
 }
 
-/* ───────── QR (§1.6.2): código para ver el menú ───────── */
+/* ───────── QR (§1.6.2): código permanente del menú público ─────────
+   La URL es estable por establecimiento (`/m/<tenantId>?c=<code>`): el QR
+   impreso en las mesas NO cambia aunque cambie el menú o el día, porque el
+   menú se resuelve dinámicamente en el servidor. */
 export function QrPage() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [url, setUrl] = useState<string>("");
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    api<{ tenantId: string; code: string }>("/api/settings/menu-qr")
+      .then(({ tenantId, code }) => {
+        setUrl(`${window.location.origin}/m/${tenantId}?c=${code}`);
+      })
+      .catch(() => setError(true));
+  }, []);
+
+  useEffect(() => {
+    if (!url || !canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, url, { width: 280, margin: 2 }, (err) => {
+      if (err) setError(true);
+    });
+  }, [url]);
+
+  function descargar() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = "menu-qr.png";
+    a.click();
+  }
+
   return (
     <div className="fade-in-up">
-      <PageHeader title="QR" subtitle="Código QR para que el cliente vea el menú del restaurante" />
-      <div className="glass mx-auto grid max-w-sm place-items-center rounded-2xl p-10 text-center">
-        <QrCode size={120} className="mb-4 text-text-secondary" strokeWidth={1} />
-        <p className="text-sm text-text-secondary">
-          El QR se generará cuando el <span className="font-medium">menú público</span> esté
-          desplegado (app de solo lectura del roadmap).
-        </p>
-      </div>
+      <PageHeader title="QR" subtitle="Código QR del menú" />
+      {error ? (
+        <p className="text-sm text-danger text-center">No se pudo generar el QR. Intenta de nuevo.</p>
+      ) : (
+        <div className="mx-auto flex flex-col items-center text-center max-w-sm">
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <canvas ref={canvasRef} aria-label="Código QR del menú" />
+          </div>
+          <Button
+            onClick={descargar}
+            className="mt-5"
+          >
+            <Download size={16} className="mr-2 inline" /> Descargar PNG
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

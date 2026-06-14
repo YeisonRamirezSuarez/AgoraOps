@@ -206,9 +206,19 @@ productsRouter.use("/", crudRouter({
   // mesero/mesero_cocina se sirve aparte en GET /menu/list.
 }));
 
+/** Zona horaria del negocio: el día de la semana para Prioridad del Menú debe
+ * calcularse en hora local de Colombia, no en la del servidor. En Vercel (UTC)
+ * `new Date().getDay()` adelanta el día tras ~7pm CO y desalineaba la prioridad
+ * de "hoy" con la guardada, dejando ver categorías no priorizadas. */
+const MENU_TZ = "America/Bogota";
+function menuWeekday(): number {
+  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: MENU_TZ }).format(new Date());
+  return new Date(`${ymd}T00:00:00Z`).getUTCDay(); // 0=domingo … 6=sábado
+}
+
 /** Menú (§1.6.1): activos, con precio > 0; respeta Prioridad del Menú. */
 productsRouter.get("/menu/list", requireAuth, async (req, res) => {
-  const weekday = new Date().getDay();
+  const weekday = menuWeekday();
   const rows = await query(
     `SELECT p.*, c.name AS category_name,
             COALESCE(mp.sort_order, 999) AS category_order
@@ -230,11 +240,8 @@ productsRouter.get("/menu/list", requireAuth, async (req, res) => {
          OR NOT EXISTS (SELECT 1 FROM inventory_products ip
                     WHERE ip.product_id = p.id AND ip.type = 'consumible')
        )
-       -- Si hay categorías favoritas para hoy, solo esas (§1.7.6)
-       AND (
-         NOT EXISTS (SELECT 1 FROM menu_priority WHERE tenant_id = $1 AND weekday = $2)
-         OR mp.id IS NOT NULL
-       )
+       -- Solo categorías en la prioridad del día (§1.7.6); sin prioridad → oculto
+       AND mp.id IS NOT NULL
      ORDER BY category_order, c.name, p.name`,
     [req.user!.tenantId, weekday],
   );
@@ -245,7 +252,7 @@ productsRouter.get("/menu/list", requireAuth, async (req, res) => {
  * variantes, toppings y receta, más mapa de inventario {id: {name, stock}}
  * para la validación de disponibilidad en el cliente (array_inventario). */
 productsRouter.get("/menu/polaris", requireAuth, async (req, res) => {
-  const weekday = new Date().getDay();
+  const weekday = menuWeekday();
   const [products, inventory] = await Promise.all([
     query(
       `SELECT p.id, p.name, p.description AS "desc", p.sale_price AS price,
@@ -274,10 +281,8 @@ productsRouter.get("/menu/polaris", requireAuth, async (req, res) => {
        LEFT JOIN menu_priority mp
          ON mp.category_id = c.id AND mp.weekday = $2 AND mp.tenant_id = $1
        WHERE p.tenant_id = $1 AND p.is_active AND p.sale_price >= 0
-         AND (
-           NOT EXISTS (SELECT 1 FROM menu_priority WHERE tenant_id = $1 AND weekday = $2)
-           OR mp.id IS NOT NULL
-         )
+         -- Solo categorías en la prioridad del día (§1.7.6); sin prioridad → oculto
+         AND mp.id IS NOT NULL
        ORDER BY category_order, c.name, p.name`,
       [req.user!.tenantId, weekday],
     ),
@@ -312,10 +317,13 @@ productsRouter.put("/:id/recipe", requireAuth, requireAdmin, async (req, res) =>
     req.body.items ?? [];
   try {
     await query("DELETE FROM recipes WHERE product_id = $1", [req.params.id]);
-    for (const item of items) {
+    if (items.length > 0) {
+      // Un INSERT por lote (unnest) en lugar de uno por ingrediente.
       await query(
-        "INSERT INTO recipes (product_id, inventory_product_id, quantity_used) VALUES ($1, $2, $3)",
-        [req.params.id, item.inventoryProductId, item.quantityUsed],
+        `INSERT INTO recipes (product_id, inventory_product_id, quantity_used)
+         SELECT $1, x.inv_id, x.qty
+         FROM unnest($2::int[], $3::numeric[]) AS x(inv_id, qty)`,
+        [req.params.id, items.map((i) => i.inventoryProductId), items.map((i) => i.quantityUsed)],
       );
     }
     res.json({ ok: true });
@@ -338,10 +346,13 @@ productsRouter.put("/:id/toppings", requireAuth, requireAdmin, async (req, res) 
   const items: { toppingId: number; maxAllowed: number }[] = req.body.items ?? [];
   try {
     await query("DELETE FROM product_toppings WHERE product_id = $1", [req.params.id]);
-    for (const item of items) {
+    if (items.length > 0) {
+      // Un INSERT por lote (unnest) en lugar de uno por topping.
       await query(
-        "INSERT INTO product_toppings (product_id, topping_id, max_allowed) VALUES ($1, $2, $3)",
-        [req.params.id, item.toppingId, item.maxAllowed],
+        `INSERT INTO product_toppings (product_id, topping_id, max_allowed)
+         SELECT $1, x.topping_id, x.max_allowed
+         FROM unnest($2::int[], $3::int[]) AS x(topping_id, max_allowed)`,
+        [req.params.id, items.map((i) => i.toppingId), items.map((i) => i.maxAllowed)],
       );
     }
     res.json({ ok: true });
@@ -403,10 +414,13 @@ productsRouter.put("/:id/combo", requireAuth, requireAdmin, async (req, res) => 
   const items: { productId: number; quantity: number }[] = req.body.items ?? [];
   try {
     await query("DELETE FROM combo_items WHERE combo_id = $1", [req.params.id]);
-    for (const item of items) {
+    if (items.length > 0) {
+      // Un INSERT por lote (unnest) en lugar de uno por componente del combo.
       await query(
-        "INSERT INTO combo_items (combo_id, product_id, quantity) VALUES ($1, $2, $3)",
-        [req.params.id, item.productId, item.quantity],
+        `INSERT INTO combo_items (combo_id, product_id, quantity)
+         SELECT $1, x.product_id, x.qty
+         FROM unnest($2::int[], $3::int[]) AS x(product_id, qty)`,
+        [req.params.id, items.map((i) => i.productId), items.map((i) => i.quantity)],
       );
     }
     res.json({ ok: true });
