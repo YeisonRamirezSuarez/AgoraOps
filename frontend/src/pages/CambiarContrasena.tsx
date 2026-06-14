@@ -81,7 +81,8 @@ export default function CambiarContrasena({ forzado = false }: { forzado?: boole
 
   // Primer ingreso: pantalla completa, sin menús ni navegación
   return (
-    <main className="grid min-h-[100dvh] place-items-center p-4">
+    <main className="h-dvh overflow-y-auto">
+      <div className="grid min-h-full place-items-center p-4">
       <div className="fade-in-up w-full max-w-md">
         <div className="mb-6 text-center">
           <h1 className="bg-gradient-to-br from-accent-blue to-accent-cyan bg-clip-text text-2xl font-bold text-transparent">
@@ -100,6 +101,7 @@ export default function CambiarContrasena({ forzado = false }: { forzado?: boole
           className="mx-auto mt-5 flex items-center gap-1.5 text-sm text-text-muted transition hover:text-text-primary">
           <LogOut size={14} /> Cerrar sesión
         </button>
+      </div>
       </div>
     </main>
   );

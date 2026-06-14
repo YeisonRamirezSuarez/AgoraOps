@@ -11,18 +11,22 @@
 
   --color-text-primary: hsl(222 25% 15%);
   --color-text-secondary: hsl(220 10% 42%);
-  --color-text-muted: hsl(220 8% 56%);
+  --color-text-muted: hsl(220 12% 44%); /* a11y: 56%→44% → AA en texto pequeño (~5.3:1 sobre blanco) */
 
-  /* Acento principal (celeste) */
-  --color-accent-blue: hsl(197 92% 55%);
-  --color-accent-blue-hover: hsl(200 90% 47%);
+  /* Acento principal (celeste) — oscurecido para AA (texto/íconos sobre blanco) */
+  --color-accent-blue: hsl(197 92% 44%);
+  --color-accent-blue-hover: hsl(200 90% 37%);
   /* Precios y totales (celeste intenso) */
   --color-accent-cyan: hsl(199 95% 45%);
 
-  --color-accent-emerald: hsl(150 75% 38%);
-  --color-accent-amber: hsl(36 95% 48%);
-  --color-accent-rose: hsl(350 80% 52%);
-  --color-accent-orange: hsl(24 95% 53%);
+  /* a11y: tonos profundizados para cruzar AA en texto/badges/íconos.
+     emerald/rose/orange pasan AA-normal sobre blanco; amber pasa AA-large
+     (no puede pasar AA-normal sin volverse marrón → usar en grande/bold o
+     con texto oscuro encima). Cálculos en .claude/design/accessibility-report.md */
+  --color-accent-emerald: hsl(150 75% 30%); /* success  ~4.6:1 */
+  --color-accent-amber: hsl(36 92% 43%);    /* warning  ~3.0:1 (AA-large) */
+  --color-accent-rose: hsl(350 80% 48%);    /* error    ~5.0:1 */
+  --color-accent-orange: hsl(22 92% 41%);   /* accent   ~4.6:1 */
 
   --color-border-subtle: hsl(220 15% 88%);
   --color-border-medium: hsl(220 12% 78%);
@@ -34,15 +38,42 @@
    applyPalette() las sobrescribe en :root; estos son los valores celeste
    por defecto (login y panel Super Admin). */
 :root {
-  --accent-glow: hsl(197 92% 55% / 0.2);        /* brillo de foco/botones */
-  --accent-glow-strong: hsl(197 92% 55% / 0.45); /* brillo intenso (CTA) */
+  --accent-glow: hsl(197 92% 44% / 0.2);        /* brillo de foco/botones */
+  --accent-glow-strong: hsl(197 92% 44% / 0.45); /* brillo intenso (CTA) */
   --page-tint: hsl(199 90% 95%);                 /* tinte del fondo de página */
+  /* Relleno de botón con texto blanco (AA). applyPalette() lo recalcula por
+     tenant; estos son los valores celeste por defecto (login/Super Admin). */
+  --color-primary-strong: hsl(200 92% 33%);
+  --color-primary-strong-2: hsl(204 92% 27%);
 }
 
 html,
 body,
 #root {
   height: 100%;
+}
+
+/* Sin rebote/rubber-banding global (iOS/Android): el scroll vive dentro de
+   los contenedores (main, paneles, modales), nunca en el body.
+   OJO iOS: `overflow:hidden` por sí solo NO frena el rebote del documento en
+   Safari/iPhone — al llegar al borde del scroll interno, el overscroll se
+   encadena al documento y arrastra todo (incluido el header fijo). Hace falta
+   `overscroll-behavior` para anclar la página. */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Los contenedores scrolleables internos "contienen" su propio rebote: cuando
+   llegan a su tope/fondo, el overscroll no se propaga al documento (evita que
+   el header/topbar se mueva en iPhone). Se aplica a <main> y a cualquier
+   utilidad de scroll de Tailwind (overflow-y-auto / overflow-auto). */
+main,
+.overflow-y-auto,
+.overflow-auto {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 body {

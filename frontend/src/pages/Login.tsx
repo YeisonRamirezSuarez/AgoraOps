@@ -45,8 +45,9 @@ export default function Login() {
   }
 
   return (
-    <main className="grid min-h-[100dvh] place-items-center p-4">
-      <div className="glass fade-in-up w-full max-w-sm rounded-2xl p-8 shadow-2xl">
+    <main className="h-dvh overflow-y-auto">
+      <div className="grid min-h-full place-items-center p-4">
+        <div className="glass fade-in-up w-full max-w-sm rounded-2xl p-8 shadow-2xl">
         <div className="mb-8 text-center">
           <h1 className="bg-gradient-to-br from-accent-blue to-accent-cyan bg-clip-text text-2xl font-bold text-transparent">
             AgoraOps
@@ -106,7 +107,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover py-3 font-semibold text-white shadow-[0_0_20px_var(--accent-glow)] transition hover:scale-[1.02] hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+            className="w-full rounded-lg bg-gradient-to-br from-[var(--color-primary-strong)] to-[var(--color-primary-strong-2)] py-3 font-semibold text-white shadow-[0_0_20px_var(--accent-glow)] transition hover:scale-[1.02] hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
           >
             {loading ? "Iniciando sesión…" : "Iniciar sesión"}
           </button>
@@ -122,6 +123,7 @@ export default function Login() {
         <p className="mt-4 text-center text-xs text-text-muted">
           El campo USUARIO distingue entre mayúsculas y minúsculas.
         </p>
+      </div>
       </div>
     </main>
   );

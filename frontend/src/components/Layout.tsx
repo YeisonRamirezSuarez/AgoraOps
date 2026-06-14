@@ -148,6 +148,9 @@ export default function Layout() {
 
   // En la toma de pedidos / pago la orden tiene su propia barra inferior
   const hideMobileNav = /^\/mesas\/\d+/.test(location.pathname);
+  // Toma de pedidos (no la pantalla de pago): el <main> no scrollea, las
+  // columnas de Orden manejan su propio scroll interno (experiencia tipo app).
+  const isOrderScreen = /^\/mesas\/\d+$/.test(location.pathname);
 
   // Cerrar el drawer al navegar a otra página
   useEffect(() => setMobileOpen(false), [location.pathname, location.search]);
@@ -197,7 +200,7 @@ export default function Layout() {
     <div className="flex h-dvh overflow-hidden">
       {/* Fondo oscuro tras el drawer en móvil */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 md:hidden"
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={() => setMobileOpen(false)} />
       )}
 
@@ -341,14 +344,14 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className={`flex-1 overflow-y-auto ${location.pathname === "/dashboard" ? "p-0 " + (hideMobileNav ? "" : "pb-24 md:pb-0") : "p-6 " + (hideMobileNav ? "" : "pb-24 md:pb-6")}`}>
+        <main className={`flex-1 ${isOrderScreen ? "overflow-hidden p-0" : "overflow-y-auto " + (location.pathname === "/dashboard" ? "p-0 " + (hideMobileNav ? "" : "pb-24 md:pb-0") : "p-6 " + (hideMobileNav ? "" : "pb-24 md:pb-6"))}`}>
           <Outlet />
         </main>
       </div>
 
       {/* ══════════ Barra de navegación inferior (solo teléfonos) ══════════ */}
       {!hideMobileNav && (
-        <nav className="glass fixed inset-x-0 bottom-0 z-40 flex rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] md:hidden">
+        <nav className="glass fixed inset-x-0 bottom-0 z-30 flex rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] md:hidden">
           {QUICK_NAV.filter((l) => canSee(l.roles)).map((l) => (
             <NavLink key={l.to} to={l.to}
               className={({ isActive }) =>

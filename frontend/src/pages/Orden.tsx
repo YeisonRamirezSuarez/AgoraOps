@@ -428,9 +428,9 @@ export default function Orden() {
   );
 
   return (
-    <div className="fade-in-up -m-6 flex min-h-[100dvh] flex-col">
+    <div className="fade-in-up flex h-full w-full flex-col">
       {/* ══ Cabecera ══ */}
-      <header className="glass flex items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-4 py-3 sm:px-6">
+      <header className="glass flex shrink-0 items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate("/mesas")} aria-label="Volver a mesas"
             className="rounded-lg p-2 text-text-muted transition hover:bg-bg-tertiary hover:text-text-primary">
@@ -456,10 +456,10 @@ export default function Orden() {
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* ══ Columna izquierda: menú ══ */}
-        <div className="flex-1 p-4 pb-28 sm:p-6 lg:pb-6">
-          <div className="mb-4 flex items-center gap-2">
+        <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-6">
+          <div className="mb-4 flex shrink-0 items-center gap-2">
             <div className="relative flex-1">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
               <Input placeholder="Buscar productos…" value={search}
@@ -483,12 +483,12 @@ export default function Orden() {
           </div>
 
           {/* Categorías */}
-          <div className="mb-5 flex flex-wrap gap-2">
+          <div className="mb-5 flex shrink-0 flex-wrap gap-2">
             {categories.map((c) => (
               <button key={c} onClick={() => setCategory(c)}
                 className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition sm:py-1.5 ${
                   c === category
-                    ? "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_12px_var(--accent-glow)]"
+                    ? "bg-gradient-to-br from-[var(--color-primary-strong)] to-[var(--color-primary-strong-2)] text-white shadow-[0_0_12px_var(--accent-glow)]"
                     : "glass text-text-secondary hover:text-text-primary"
                 }`}>
                 {c}
@@ -496,8 +496,8 @@ export default function Orden() {
             ))}
           </div>
 
-          {/* Productos */}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-3">
+          {/* Productos — único scroll de la columna; buscador y categorías fijos */}
+          <div className="grid min-h-0 flex-1 content-start grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-3 overflow-y-auto pb-24 lg:pb-1">
             {filteredMenu.map((p) => (
               <button key={p.id} onClick={() => setProductModal({ product: p })}
                 className="glass relative flex min-h-28 flex-col justify-between rounded-2xl p-4 text-left transition hover:-translate-y-0.5 hover:border-accent-blue/50 hover:shadow-lg">
@@ -521,8 +521,8 @@ export default function Orden() {
         </div>
 
         {/* ══ Panel derecho (tablet/desktop) ══ */}
-        <aside className="glass hidden w-96 flex-col border-l border-border-subtle p-5 lg:flex">
-          <div className="flex-1 overflow-y-auto">{panelBody}</div>
+        <aside className="glass hidden w-96 min-h-0 flex-col border-l border-border-subtle p-5 lg:flex">
+          <div className="min-h-0 flex-1 overflow-y-auto">{panelBody}</div>
           {panelActions}
         </aside>
       </div>
@@ -530,7 +530,7 @@ export default function Orden() {
       {/* ══ Barra carrito fija (móviles) ══ */}
       <div className="fixed inset-x-0 bottom-0 z-40 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] lg:hidden">
         <button onClick={() => setSheetOpen(true)}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-accent-blue to-accent-blue-hover px-5 py-3 text-white shadow-[0_4px_20px_var(--accent-glow-strong)] transition active:scale-[0.98]">
+          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-[var(--color-primary-strong)] to-[var(--color-primary-strong-2)] px-5 py-3 text-white shadow-[0_4px_20px_var(--accent-glow-strong)] transition active:scale-[0.98]">
           <span className="flex min-w-0 items-center gap-3">
             <ShoppingCart size={22} className="shrink-0" />
             <span className="min-w-0 text-left leading-tight">
@@ -786,7 +786,7 @@ function ProductModal({ product, item, orderId, inventory, customerId, sharedMod
           onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
           className="w-20 border-b border-border-medium bg-transparent text-center text-xl font-bold outline-none" />
         <button onClick={() => setQty((q) => q + 1)} aria-label="Sumar"
-          className="grid h-12 w-12 place-items-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white active:scale-95">
+          className="grid h-12 w-12 place-items-center rounded-lg bg-gradient-to-br from-[var(--color-primary-strong)] to-[var(--color-primary-strong-2)] text-white active:scale-95">
           <Plus size={18} />
         </button>
       </div>

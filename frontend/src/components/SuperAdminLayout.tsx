@@ -35,7 +35,7 @@ export default function SuperAdminLayout() {
   return (
     <div className="flex h-dvh overflow-hidden">
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 md:hidden"
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={() => setMobileOpen(false)} />
       )}
 

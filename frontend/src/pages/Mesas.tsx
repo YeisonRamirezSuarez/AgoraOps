@@ -94,9 +94,14 @@ export default function Mesas() {
     });
     // Cronómetro en vivo HH:MM:SS (Polaris: tick de 1 s)
     const t = setInterval(() => tick((n) => n + 1), 1000);
-    const onScroll = () => setShowScrollTop(window.scrollY > 200);
-    window.addEventListener("scroll", onScroll);
-    return () => { unsub(); clearInterval(t); window.removeEventListener("scroll", onScroll); };
+    // El scroll vive en <main> (Layout), no en window: usamos la fase de
+    // captura para detectar el scroll del contenedor interno y leemos su scrollTop.
+    const onScroll = (e: Event) => {
+      const el = e.target as HTMLElement;
+      setShowScrollTop((el?.scrollTop ?? window.scrollY) > 200);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    return () => { unsub(); clearInterval(t); window.removeEventListener("scroll", onScroll, true); };
   }, [load]);
 
   const rooms = useMemo(() => {
@@ -343,9 +348,9 @@ export default function Mesas() {
 
       {/* Botón volver arriba — solo móvil (Polaris scroll-to-top) */}
       {showScrollTop && (
-        <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        <button onClick={() => document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" })}
           aria-label="Volver arriba"
-          className="fixed bottom-24 right-4 z-40 grid h-11 w-11 place-items-center rounded-full bg-accent-blue text-white shadow-lg transition active:scale-95 md:hidden">
+          className="fixed bottom-24 right-4 z-40 grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary-strong)] text-white shadow-lg transition active:scale-95 md:hidden">
           <ArrowUp size={20} />
         </button>
       )}
