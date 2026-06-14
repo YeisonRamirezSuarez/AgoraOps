@@ -40,7 +40,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
+      {/* En móvil (< md) la barra de navegación inferior ocupa el borde, así que
+          los toasts se elevan por encima de ella (y se acotan a izq/der para no
+          salirse); en md+ no hay barra y van abajo-derecha como siempre. */}
+      <div className="fixed inset-x-4 z-[100] flex flex-col items-end gap-2 bottom-[calc(5rem+env(safe-area-inset-bottom))] md:inset-x-auto md:right-4 md:bottom-4">
         {toasts.map((t) => (
           <div
             key={t.id}
@@ -72,7 +75,7 @@ export function useToast() {
 
 const BTN_VARIANTS = {
   primary:
-    "bg-gradient-to-br from-accent-blue to-accent-blue-hover text-white shadow-[0_0_16px_var(--accent-glow)] hover:brightness-110",
+    "bg-gradient-to-br from-[var(--color-primary-strong)] to-[var(--color-primary-strong-2)] text-white shadow-[0_0_16px_var(--accent-glow)] hover:brightness-110",
   success:
     "bg-gradient-to-br from-accent-emerald to-emerald-700 text-white hover:brightness-110",
   danger:
@@ -273,6 +276,14 @@ export function Modal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Bloquea el scroll del fondo mientras el modal está abierto (evita que se
+  // arrastre la página detrás en móvil/tablet).
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add("overflow-hidden");
+    return () => document.body.classList.remove("overflow-hidden");
+  }, [open]);
 
   if (!open) return null;
   // Portal a <body>: los contenedores animados (fade-in-up) tienen transform
@@ -503,7 +514,7 @@ export function PaginationBar({ page, totalPages, pageSize, from, to, total, onP
       <div className="flex items-center gap-1">
         <Pager label="«" disabled={page === 1} onClick={() => onPage(1)} />
         <Pager label="‹" disabled={page === 1} onClick={() => onPage(page - 1)} />
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-blue text-sm font-semibold text-white">
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--color-primary-strong)] text-sm font-semibold text-white">
           {page}
         </span>
         <Pager label="›" disabled={page === totalPages} onClick={() => onPage(page + 1)} />

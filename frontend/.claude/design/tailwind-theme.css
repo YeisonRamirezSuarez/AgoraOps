@@ -1,0 +1,107 @@
+/* Design: agoraops
+ * Source: project audit
+ * Extracted: 2026-06-13
+ * Migration: validated & normalized Tailwind v4 (ya estaba en v4)
+ *
+ * Este archivo NO reemplaza tu src/index.css. Documenta el @theme actual y
+ * añade ALIAS SEMÁNTICOS opcionales (--color-primary, --color-success, ...)
+ * que apuntan a tus tokens existentes vía var(), para poder escribir clases
+ * como bg-primary / text-success sin perder el override por tenant.
+ *
+ * Para adoptarlo, copia el bloque de "ALIAS SEMÁNTICOS" dentro del @theme de
+ * tu src/index.css. Los tokens accent-* originales se mantienen intactos.
+ *
+ *   @import "./tailwind-theme.css";   (o copia el @theme en src/index.css)
+ */
+
+@theme {
+  /* ───────── TOKENS ACTUALES (espejo de src/index.css, sin cambios) ───────── */
+
+  /* Surface */
+  --color-bg-primary: hsl(220 20% 97%);   /* source: --color-bg-primary */
+  --color-bg-secondary: hsl(0 0% 100%);   /* source: --color-bg-secondary */
+  --color-bg-tertiary: hsl(220 16% 93%);  /* source: --color-bg-tertiary */
+  --color-bg-elevated: hsl(0 0% 100%);    /* source: --color-bg-elevated */
+
+  /* Texto */
+  --color-text-primary: hsl(222 25% 15%);   /* source: --color-text-primary */
+  --color-text-secondary: hsl(220 10% 42%); /* source: --color-text-secondary */
+  --color-text-muted: hsl(220 8% 56%);      /* source: --color-text-muted */
+
+  /* Marca (sobreescrita en runtime por applyPalette) */
+  --color-accent-blue: hsl(197 92% 55%);       /* source: --color-accent-blue */
+  --color-accent-blue-hover: hsl(200 90% 47%); /* source: --color-accent-blue-hover */
+  --color-accent-cyan: hsl(199 95% 45%);       /* source: --color-accent-cyan */
+
+  /* Estado / decorativo */
+  --color-accent-emerald: hsl(150 75% 38%); /* source: --color-accent-emerald */
+  --color-accent-amber: hsl(36 95% 48%);    /* source: --color-accent-amber */
+  --color-accent-rose: hsl(350 80% 52%);    /* source: --color-accent-rose */
+  --color-accent-orange: hsl(24 95% 53%);   /* source: --color-accent-orange */
+
+  /* Bordes */
+  --color-border-subtle: hsl(220 15% 88%); /* source: --color-border-subtle */
+  --color-border-medium: hsl(220 12% 78%); /* source: --color-border-medium */
+
+  /* Tipografía */
+  --font-sans: "Nunito Sans", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* ───────── ALIAS SEMÁNTICOS (NUEVO — opcional) ─────────
+   * Mapean los roles estándar a tus tokens existentes vía var(), de modo que
+   * siguen respetando el override por tenant en runtime. Habilitan utilidades
+   * como bg-primary, text-success, border-default, bg-card, text-body, etc. */
+  --color-primary: var(--color-accent-blue);          /* marca / interacción */
+  --color-primary-hover: var(--color-accent-blue-hover);
+  --color-secondary: var(--color-accent-cyan);        /* precios / totales */
+  --color-accent: var(--color-accent-orange);         /* decorativo (toppings) */
+
+  --color-success: var(--color-accent-emerald);
+  --color-warning: var(--color-accent-amber);
+  --color-error: var(--color-accent-rose);
+
+  --color-text: var(--color-text-primary);            /* texto principal */
+  --color-body: var(--color-text-secondary);          /* texto de apoyo */
+  --color-muted: var(--color-text-muted);             /* metadatos */
+
+  --color-background: var(--color-bg-primary);         /* fondo de página */
+  --color-card: var(--color-bg-secondary);             /* superficie de tarjeta */
+  --color-border: var(--color-border-subtle);          /* borde por defecto */
+
+  /* ───────── ESCALAS OPCIONALES (NUEVO — comentadas) ─────────
+   * Hoy el proyecto usa la escala por defecto de Tailwind. Descomentar solo si
+   * se quiere formalizar radios/spacing como tokens semánticos. */
+  /* --radius-micro: 0.5rem;   */ /* rounded-lg  → botones, inputs */
+  /* --radius-button: 0.75rem; */ /* rounded-xl  → chips, widgets */
+  /* --radius-card: 1rem;      */ /* rounded-2xl → tarjetas, modales */
+}
+
+/* ───────── Variantes light/dark de marca (auto, vía color-mix en oklch) ─────────
+ * Útiles para hovers/sombras derivadas sin hardcodear hex. Siguen al tenant. */
+:root {
+  --color-primary-light: color-mix(in oklch, var(--color-accent-blue), white 30%);
+  --color-primary-dark: color-mix(in oklch, var(--color-accent-blue), black 20%);
+  --color-secondary-light: color-mix(in oklch, var(--color-accent-cyan), white 30%);
+  --color-secondary-dark: color-mix(in oklch, var(--color-accent-cyan), black 20%);
+  --color-accent-light: color-mix(in oklch, var(--color-accent-orange), white 30%);
+  --color-accent-dark: color-mix(in oklch, var(--color-accent-orange), black 20%);
+}
+
+/* @font-face — Nunito Sans hoy depende de la fuente del sistema (fallback Segoe UI).
+ * Para garantizar el render en todos los equipos, self-hostea woff2 y descomenta:
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("/fonts/nunito-sans-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("/fonts/nunito-sans-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+*/
+
+/* Sin dark mode: el proyecto es mono-tema (claro). No se genera bloque dark. */
