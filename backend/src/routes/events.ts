@@ -3,6 +3,20 @@
  * Postgres pg_notify('app_events', …) → LISTEN → EventSource del frontend.
  * EventSource no envía headers: el JWT viaja como ?token= (lo acepta
  * requireAuth). Reconexión automática del navegador si Vercel corta.
+ *
+ * ⚠️ LIMITACIÓN CONOCIDA — fan-out por instancia (diferido a propósito):
+ * `subscribers` y `listener` viven EN MEMORIA de la instancia. En Vercel
+ * serverless cada instancia es un proceso aparte: un NOTIFY solo se reparte a
+ * los clientes conectados a la MISMA instancia que tiene el LISTEN. Con varias
+ * instancias, algunos usuarios no recibirían ciertos eventos en tiempo real.
+ * Además cada conexión SSE mantiene una invocación de función abierta.
+ *
+ * Hoy NO es un problema: el tráfico es bajo y Vercel mantiene una sola
+ * instancia caliente; el frontend ya multiplexa una única conexión SSE por
+ * cliente (lib/api.ts subscribeEvents). Si esto escala a 2+ instancias, hay
+ * que mover el fan-out fuera de la memoria del proceso. Opciones evaluadas:
+ * Supabase Realtime (requiere policies RLS), un host persistente
+ * (Railway/Render/Fly) o un broker pub/sub (Upstash Redis/Ably/Pusher).
  */
 import { Router } from "express";
 import pg from "pg";
@@ -17,8 +31,11 @@ let listener: pg.Client | null = null;
 async function ensureListener() {
   if (listener) return;
   listener = new pg.Client({
-    connectionString: config.databaseUrl,
-    ssl: config.dbSsl, // centralizado en config (igual que el pool)
+    // LISTEN/NOTIFY requiere session mode: el transaction pooler (6543) no lo
+    // soporta. databaseSessionUrl apunta al session pooler (5432) o, si no se
+    // definió, cae a databaseUrl (Postgres local directo sí permite LISTEN).
+    connectionString: config.databaseSessionUrl,
+    ssl: config.dbSessionSsl,
   });
   await listener.connect();
   await listener.query("LISTEN app_events");

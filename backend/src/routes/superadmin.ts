@@ -11,10 +11,13 @@
  */
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { config } from "../config.js";
 import { pool, query, queryOne } from "../db.js";
 import { dbErrorMessage } from "../lib/crud.js";
+import { TEMP_PASSWORD } from "../lib/constants.js";
+import { generateUsername } from "../lib/username.js";
+import { sendTenantWelcomeEmail } from "../lib/mailer.js";
 import { requireAuth, requireSuperAdmin } from "../middleware/auth.js";
 
 export const superadminRouter = Router();
@@ -32,11 +35,6 @@ const PALETTES = [
 function rangeDays(q: unknown): number {
   const n = parseInt(String(q), 10);
   return [7, 30, 90, 180, 365].includes(n) ? n : 30;
-}
-
-/** Clave temporal legible (Agora-xxxxxxxx); se fuerza el cambio al entrar. */
-function tempPassword(): string {
-  return `Agora-${randomBytes(6).toString("base64url")}`;
 }
 
 /* ─────────────────── Dashboard global (ranking) ─────────────────── */
@@ -197,7 +195,6 @@ const createSchema = z.object({
   cashRegisterName: z.string().min(1).default("Caja Principal"),
   admin: z.object({
     fullName: z.string().min(1),
-    username: z.string().min(1),
     email: z.string().email("Correo del administrador inválido"),
     phone: z.string().nullish(),
   }),
@@ -225,7 +222,11 @@ superadminRouter.post("/tenants", async (req, res) => {
     return;
   }
 
-  const password = tempPassword();
+  // El username del administrador se genera automáticamente desde su nombre
+  // (inicial + apellido); es único globalmente, así que no hay que pedirlo ni
+  // validar duplicados manualmente. La clave temporal es fija (TEMP_PASSWORD).
+  const username = await generateUsername(d.admin.fullName);
+  const password = TEMP_PASSWORD;
   const hash = await bcrypt.hash(password, 10);
 
   // Moneda: default por país (CO → COP/$/0, EC → USD/$/2) salvo override.
@@ -274,7 +275,7 @@ superadminRouter.post("/tenants", async (req, res) => {
          phone, group_id, must_change_password)
        VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
       [
-        tenant.id, d.admin.username, d.admin.email, hash,
+        tenant.id, username, d.admin.email, hash,
         d.admin.fullName, d.admin.phone ?? null, adminGroupId,
       ],
     );
@@ -317,10 +318,28 @@ superadminRouter.post("/tenants", async (req, res) => {
     await client.query("INSERT INTO objectives (tenant_id) VALUES ($1)", [tenant.id]);
 
     await client.query("COMMIT");
+
+    // Correo de apertura del establecimiento al administrador (paso a paso,
+    // enlace al frontend, credenciales y logos). No debe tumbar la creación si
+    // el SMTP falla: el tenant ya quedó commiteado y las credenciales se
+    // muestran igual en el panel.
+    void sendTenantWelcomeEmail({
+      to: d.admin.email,
+      fullName: d.admin.fullName,
+      businessName: d.name,
+      username,
+      tempPassword: password,
+      loginUrl: `${config.appUrl}/login`,
+      brandLogoUrl: `${config.appUrl}/pwa-192x192.png`,
+      tenantLogoUrl: d.logoUrl ?? null,
+    }).catch((e) => {
+      console.error(`[superadmin] No se pudo enviar el correo de apertura a ${d.admin.email}:`, e);
+    });
+
     res.status(201).json({
       tenant,
       adminCredentials: {
-        username: d.admin.username,
+        username,
         email: d.admin.email,
         tempPassword: password,
       },
@@ -404,7 +423,7 @@ superadminRouter.patch("/tenants/:id/status", async (req, res) => {
 
 /** Restablecer la clave de un usuario del establecimiento (clave temporal). */
 superadminRouter.post("/tenants/:id/users/:userId/reset-password", async (req, res) => {
-  const password = tempPassword();
+  const password = TEMP_PASSWORD;
   const hash = await bcrypt.hash(password, 10);
   const row = await queryOne(
     `UPDATE users SET password_hash = $3, must_change_password = true

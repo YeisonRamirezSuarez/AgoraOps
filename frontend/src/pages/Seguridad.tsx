@@ -4,7 +4,7 @@
  * grupos/usuarios (búsqueda por rol).
  */
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { CrudPage } from "../components/CrudPage";
 import { useTabParam } from "../lib/useTab";
@@ -59,7 +59,6 @@ function UsersTab() {
   const [editing, setEditing] = useState<Partial<UserRow> | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [deleting, setDeleting] = useState<UserRow | null>(null);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [created, setCreated] = useState<{ username: string; defaultPassword: string; workerReminder: string | null } | null>(null);
 
   const load = useCallback(() => {
@@ -71,15 +70,15 @@ function UsersTab() {
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!editing) return;
-    setSuggestions([]);
     try {
       if (isNew) {
+        // El username se genera en el backend a partir del nombre completo.
         const r = await api<{ username: string; defaultPassword: string; workerReminder: string | null }>(
           "/api/users",
           {
             method: "POST",
             body: {
-              username: editing.username, email: editing.email,
+              email: editing.email,
               fullName: editing.full_name, phone: editing.phone || undefined,
               groupId: Number(editing.group_id), isWorker: !!editing.is_worker,
             },
@@ -101,14 +100,7 @@ function UsersTab() {
       setEditing(null);
       load();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        // §1.13: nombre duplicado → sugerencias con botón Copiar
-        const payload = err.payload as { suggestions?: string[] };
-        setSuggestions(payload.suggestions ?? []);
-        toast("error", err.message);
-      } else {
-        toast("error", err instanceof ApiError ? err.message : "Error al guardar");
-      }
+      toast("error", err instanceof ApiError ? err.message : "Error al guardar");
     }
   }
 
@@ -146,29 +138,17 @@ function UsersTab() {
         </div>
 
         <div className="glass max-w-3xl space-y-4 rounded-2xl p-6">
-          <FormRow label={`Usuario ${!isNew ? "(no editable)" : "(distingue mayúsculas)"}`} required>
-            <Input required disabled={!isNew} autoCapitalize="none" spellCheck={false}
-              value={editing.username ?? ""}
-              onChange={(e) => setEditing({ ...editing, username: e.target.value })} />
-          </FormRow>
-          {/* Sugerencias de nombres disponibles (§1.13) */}
-          {suggestions.length > 0 && (
-            <div className="rounded-xl border border-accent-amber/40 bg-accent-amber/10 p-3 text-sm">
-              <p className="mb-2 text-accent-amber">Nombres disponibles:</p>
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map((s) => (
-                  <button key={s} type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(s).catch(() => {});
-                      setEditing({ ...editing, username: s });
-                      toast("success", `"${s}" copiado y aplicado`);
-                    }}
-                    className="flex items-center gap-1 rounded-full bg-bg-tertiary px-3 py-1 text-xs hover:text-accent-blue">
-                    <Copy size={11} /> {s}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {isNew ? (
+            <p className="rounded-xl border border-accent-blue/30 bg-accent-blue/10 p-3 text-sm text-text-secondary">
+              El nombre de usuario se genera automáticamente a partir del nombre
+              completo, y se asigna una contraseña temporal que deberá cambiarse
+              en el primer ingreso.
+            </p>
+          ) : (
+            <FormRow label="Usuario (no editable)">
+              <Input disabled autoCapitalize="none" spellCheck={false}
+                value={editing.username ?? ""} />
+            </FormRow>
           )}
           <FormRow label="Nombre completo" required>
             <Input required value={editing.full_name ?? ""}
@@ -217,8 +197,8 @@ function UsersTab() {
     <>
       <div className="mb-4 flex justify-end">
         <Button onClick={() => {
-          setEditing({ username: "", email: "", full_name: "", phone: "", is_worker: false });
-          setIsNew(true); setSuggestions([]);
+          setEditing({ email: "", full_name: "", phone: "", is_worker: false });
+          setIsNew(true);
         }}>
           <Plus size={15} className="-mt-0.5 mr-1 inline" /> Agregar usuario
         </Button>
@@ -240,7 +220,7 @@ function UsersTab() {
             </td>
             <td className="px-4 py-2">
               <div className="flex gap-1">
-                <button onClick={() => { setEditing({ ...u }); setIsNew(false); setSuggestions([]); }}
+                <button onClick={() => { setEditing({ ...u }); setIsNew(false); }}
                   className="rounded-lg p-1.5 text-text-muted hover:bg-accent-blue/15 hover:text-accent-blue">
                   <Pencil size={15} />
                 </button>

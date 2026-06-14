@@ -56,18 +56,51 @@ export async function api<T = unknown>(
 }
 
 /** Suscripción SSE a eventos del tenant (mesas, cocina, stock). */
-export function subscribeEvents(
-  onEvent: (event: { table: string; action: string; id: string }) => void,
-): () => void {
+type AppEvent = { table: string; action: string; id: string };
+
+// Un único EventSource compartido por toda la app: antes cada componente que
+// se suscribía (campana + Cocina/Mesas/Orden/Notificaciones) abría su PROPIA
+// conexión SSE, multiplicando conexiones en el backend y disparando un
+// re-fetch por cada una ante el mismo evento. Ahora se multiplexan los
+// listeners locales sobre una sola conexión, que se cierra al quedar sin
+// suscriptores (logout/desmontaje) y se reabre si cambia el token (re-login).
+let sharedSource: EventSource | null = null;
+let sharedToken: string | null = null;
+const eventListeners = new Set<(event: AppEvent) => void>();
+
+function ensureEventSource() {
   const token = getToken();
-  if (!token) return () => {};
+  if (!token) {
+    closeEventSource();
+    return;
+  }
+  if (sharedSource && sharedToken !== token) closeEventSource(); // re-login
+  if (sharedSource) return;
+  sharedToken = token;
   const source = new EventSource(`${API_URL}/api/events?token=${token}`);
   source.onmessage = (e) => {
+    let event: AppEvent;
     try {
-      onEvent(JSON.parse(e.data));
+      event = JSON.parse(e.data);
     } catch {
-      /* heartbeat */
+      return; // heartbeat (": ping") u otra línea no-JSON
     }
+    for (const listener of eventListeners) listener(event);
   };
-  return () => source.close();
+  sharedSource = source;
+}
+
+function closeEventSource() {
+  if (sharedSource) sharedSource.close();
+  sharedSource = null;
+  sharedToken = null;
+}
+
+export function subscribeEvents(onEvent: (event: AppEvent) => void): () => void {
+  eventListeners.add(onEvent);
+  ensureEventSource();
+  return () => {
+    eventListeners.delete(onEvent);
+    if (eventListeners.size === 0) closeEventSource();
+  };
 }

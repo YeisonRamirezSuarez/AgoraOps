@@ -150,26 +150,52 @@ settingsRouter.put("/payment-methods", async (req, res) => {
     return;
   }
   try {
-    for (const m of parsed.data.methods) {
-      const row = await queryOne(
-        `UPDATE payment_methods SET is_active = $3
-         WHERE id = $1 AND tenant_id = $2 RETURNING id`,
-        [m.id, req.user!.tenantId, m.is_active],
+    const methods = parsed.data.methods;
+    // 1) UPDATE de is_active en lote (antes: un UPDATE por método). El
+    // RETURNING confirma qué ids son realmente del tenant (sustituye al
+    // `if (!row) continue` que ignoraba ids ajenos).
+    const updated = await query<{ id: number }>(
+      `UPDATE payment_methods pm SET is_active = v.is_active
+       FROM unnest($2::int[], $3::bool[]) AS v(id, is_active)
+       WHERE pm.id = v.id AND pm.tenant_id = $1
+       RETURNING pm.id`,
+      [req.user!.tenantId, methods.map((m) => m.id), methods.map((m) => m.is_active)],
+    );
+    const ownedIds = new Set(updated.map((r) => r.id));
+
+    // 2) Reconciliar bancos solo de métodos con bank_ids definido y del tenant.
+    // (bank_ids = [] limpia los bancos; undefined no toca nada — igual que antes.)
+    const withBanks = methods.filter((m) => m.bank_ids && ownedIds.has(m.id));
+    if (withBanks.length > 0) {
+      const affectedIds = withBanks.map((m) => m.id);
+      // DELETE en lote y SCOPEADO por tenant (antes el DELETE no validaba
+      // tenant: un id ajeno cuyo UPDATE fallaba ya no llegaba aquí, pero el
+      // join explícito lo blinda).
+      await query(
+        `DELETE FROM payment_method_banks pmb
+         USING payment_methods pm
+         WHERE pmb.payment_method_id = pm.id
+           AND pm.tenant_id = $1
+           AND pmb.payment_method_id = ANY($2::int[])`,
+        [req.user!.tenantId, affectedIds],
       );
-      if (!row) continue; // ignora ids ajenos al tenant
-      if (m.bank_ids) {
-        await query(
-          "DELETE FROM payment_method_banks WHERE payment_method_id = $1",
-          [m.id],
-        );
-        if (m.bank_ids.length > 0) {
-          // Un INSERT por lote (unnest) en vez de uno por banco.
-          await query(
-            `INSERT INTO payment_method_banks (payment_method_id, bank_id)
-             SELECT $1, x.bank_id FROM unnest($2::int[]) AS x(bank_id)`,
-            [m.id, m.bank_ids],
-          );
+      // INSERT en lote: aplanar los pares (method_id, bank_id) en dos arrays
+      // paralelos y un único unnest (antes: un INSERT por método).
+      const pmIds: number[] = [];
+      const bankIds: number[] = [];
+      for (const m of withBanks) {
+        for (const b of m.bank_ids!) {
+          pmIds.push(m.id);
+          bankIds.push(b);
         }
+      }
+      if (pmIds.length > 0) {
+        await query(
+          `INSERT INTO payment_method_banks (payment_method_id, bank_id)
+           SELECT v.pm_id, v.bank_id
+           FROM unnest($1::int[], $2::int[]) AS v(pm_id, bank_id)`,
+          [pmIds, bankIds],
+        );
       }
     }
     res.json({ ok: true });

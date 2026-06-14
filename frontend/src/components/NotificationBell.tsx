@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { api, subscribeEvents } from "../lib/api";
+import { debounce } from "../lib/debounce";
 
 interface PendingNotification {
   id: number;
@@ -35,14 +36,21 @@ export default function NotificationBell() {
 
   useEffect(() => {
     load();
-    return subscribeEvents((e) => {
+    // Colapsa ráfagas de eventos en un solo reload (el timbre del INSERT sí
+    // suena de inmediato; solo se difiere el re-fetch de la lista).
+    const reload = debounce(load, 250);
+    const unsub = subscribeEvents((e) => {
       if (e.table !== "notifications") return;
       if (e.action === "INSERT") {
         // Timbre de Polaris al llegar una notificación nueva
         new Audio("/notification.mp3").play().catch(() => {});
       }
-      load();
+      reload();
     });
+    return () => {
+      reload.cancel();
+      unsub();
+    };
   }, []);
 
   useEffect(() => {
