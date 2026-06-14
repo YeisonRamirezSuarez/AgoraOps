@@ -53,13 +53,16 @@ async function toppingsTotalOf(toppings: ToppingSel[]): Promise<number> {
 
 /** Inserta los toppings de un ítem copiando nombre/precio actuales. */
 async function insertItemToppings(itemId: number, toppings: ToppingSel[]): Promise<void> {
-  for (const t of toppings) {
-    await query(
-      `INSERT INTO order_item_toppings (order_item_id, topping_id, topping_name, topping_price, quantity)
-       SELECT $1, id, name, price, $3 FROM toppings WHERE id = $2`,
-      [itemId, t.toppingId, t.quantity],
-    );
-  }
+  if (toppings.length === 0) return;
+  // Un solo INSERT…SELECT con unnest (mismo patrón que toppingsTotalOf) en
+  // lugar de un INSERT por topping: evita N viajes a la BD por ítem.
+  await query(
+    `INSERT INTO order_item_toppings (order_item_id, topping_id, topping_name, topping_price, quantity)
+     SELECT $1, t.id, t.name, t.price, x.qty
+     FROM unnest($2::int[], $3::int[]) AS x(id, qty)
+     JOIN toppings t ON t.id = x.id`,
+    [itemId, toppings.map((t) => t.toppingId), toppings.map((t) => t.quantity)],
+  );
 }
 
 /** Opciones para la pantalla de pago (§1.6.3): métodos activos, bancos,
@@ -482,12 +485,16 @@ ordersRouter.put("/:id/items-customer", async (req, res) => {
     res.status(400).json({ error: "Asignaciones inválidas" });
     return;
   }
-  for (const a of parsed.data.assignments) {
-    await query(
-      "UPDATE order_items SET customer_id = $1 WHERE id = $2 AND order_id = $3",
-      [a.customerId, a.itemId, req.params.id],
-    );
-  }
+  // Un solo UPDATE con unnest en vez de N updates seriales (un viaje a la BD).
+  const itemIds = parsed.data.assignments.map((a) => a.itemId);
+  const customerIds = parsed.data.assignments.map((a) => a.customerId);
+  await query(
+    `UPDATE order_items AS oi
+     SET customer_id = x.customer_id
+     FROM unnest($1::int[], $2::int[]) AS x(item_id, customer_id)
+     WHERE oi.id = x.item_id AND oi.order_id = $3`,
+    [itemIds, customerIds, req.params.id],
+  );
   res.json({ ok: true });
 });
 

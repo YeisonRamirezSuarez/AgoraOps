@@ -485,37 +485,33 @@ superadminRouter.get("/tenants/:id/usage", async (req, res) => {
      ORDER BY c.table_name`,
   );
 
-  const storage: { table: string; rows: number; bytes: number }[] = [];
-  for (const { table_name } of tenantTables) {
-    const r = await queryOne<{ rows: number; bytes: string }>(
-      `SELECT COUNT(*)::int AS rows,
-              COALESCE(SUM(pg_column_size(x.*)), 0)::bigint AS bytes
-       FROM "${table_name}" x WHERE x.tenant_id = $1`,
-      [id],
-    );
-    if (r && r.rows > 0) {
-      storage.push({ table: table_name, rows: r.rows, bytes: Number(r.bytes) });
-    }
-  }
-  // Hijas de orders (el grueso del histórico)
+  // Hijas de orders (el grueso del histórico), sin columna tenant_id propia.
   const children: [string, string][] = [
     ["order_items", `JOIN orders o ON o.id = x.order_id`],
     ["order_payments", `JOIN orders o ON o.id = x.order_id`],
     ["order_item_toppings",
       `JOIN order_items oi ON oi.id = x.order_item_id JOIN orders o ON o.id = oi.order_id`],
   ];
-  for (const [table, join] of children) {
-    const r = await queryOne<{ rows: number; bytes: string }>(
-      `SELECT COUNT(x.*)::int AS rows,
-              COALESCE(SUM(pg_column_size(x.*)), 0)::bigint AS bytes
-       FROM ${table} x ${join} WHERE o.tenant_id = $1`,
-      [id],
-    );
-    if (r && r.rows > 0) {
-      storage.push({ table, rows: r.rows, bytes: Number(r.bytes) });
-    }
-  }
-  storage.sort((a, b) => b.bytes - a.bytes);
+  // Antes era un SELECT por tabla (N+1) que saturaba el pool con decenas de
+  // viajes seriales; ahora se estima TODO en un solo viaje con UNION ALL.
+  const unionQueries = tenantTables.map(({ table_name }) =>
+    `SELECT '${table_name}' AS table_name, COUNT(*)::int AS rows,
+            COALESCE(SUM(pg_column_size(x.*)), 0)::bigint AS bytes
+     FROM "${table_name}" x WHERE x.tenant_id = $1`,
+  );
+  const childrenQueries = children.map(([table, join]) =>
+    `SELECT '${table}' AS table_name, COUNT(x.*)::int AS rows,
+            COALESCE(SUM(pg_column_size(x.*)), 0)::bigint AS bytes
+     FROM ${table} x ${join} WHERE o.tenant_id = $1`,
+  );
+  const allQueries = [...unionQueries, ...childrenQueries].join("\nUNION ALL\n");
+  const storageRows = await query<{ table_name: string; rows: number; bytes: string }>(
+    `SELECT * FROM (${allQueries}) q WHERE q.rows > 0`,
+    [id],
+  );
+  const storage = storageRows
+    .map((r) => ({ table: r.table_name, rows: r.rows, bytes: Number(r.bytes) }))
+    .sort((a, b) => b.bytes - a.bytes);
 
   res.json({
     days,

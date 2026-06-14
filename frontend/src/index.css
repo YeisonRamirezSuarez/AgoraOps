@@ -53,6 +53,19 @@ body,
   height: 100%;
 }
 
+/* Sin flechas (spin buttons) en los inputs numéricos — en TODOS los inputs.
+   Polaris no las muestra y en POS táctil estorban / desalinean el control. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Sin rebote/rubber-banding global (iOS/Android): el scroll vive dentro de
    los contenedores (main, paneles, modales), nunca en el body.
    OJO iOS: `overflow:hidden` por sí solo NO frena el rebote del documento en

@@ -41,6 +41,7 @@ function dateRange(col: string, fromParam: number, toParam: number): string {
 
 type Range = { from: string; to: string };
 type TrendBucket = "hour" | "day" | "month";
+type PeriodSpec = { key: string; range: Range; bucket: TrendBucket };
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -142,125 +143,185 @@ interface RankingPaymentsRow {
   amount: number;
 }
 
-/** Pedidos gestionados por usuario (toda orden no cancelada del rango). */
-async function rankingOrders(tenant: string | null, r: Range): Promise<RankingOrdersRow[]> {
-  const rows = await query<{ user_login: string; user_name: string; count: number; sales: string }>(
-    `SELECT u.username AS user_login, u.full_name AS user_name,
-            COUNT(DISTINCT o.id)::int AS count,
-            COALESCE(SUM(oi.subtotal), 0) AS sales
-     FROM orders o
-     JOIN users u ON u.id = o.user_id
-     LEFT JOIN order_items oi ON oi.order_id = o.id
-       AND oi.kitchen_status <> 'cancelado'
-     WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-       AND ${dateRange("o.created_at", 2, 3)}
-     GROUP BY u.username, u.full_name
-     ORDER BY count DESC, sales DESC`,
-    [tenant, r.from, r.to],
-  );
-  return rows.map((row) => ({
-    user: `${row.user_login} - ${row.user_name}`,
-    user_login: row.user_login,
-    user_name: row.user_name,
-    count: row.count,
-    sales: Number(row.sales),
-  }));
-}
-
-/** Pagos procesados por usuario (cobros netos, propina incluida). */
-async function rankingPayments(tenant: string | null, r: Range): Promise<RankingPaymentsRow[]> {
-  const rows = await query<{ user_login: string; user_name: string; count: number; amount: string }>(
-    `SELECT u.username AS user_login, u.full_name AS user_name,
-            COUNT(op.id)::int AS count,
-            COALESCE(SUM(op.amount - op.change_given), 0) AS amount
-     FROM order_payments op
-     JOIN orders o ON o.id = op.order_id
-     JOIN users u ON u.id = op.user_id
-     WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-       AND ${dateRange("op.created_at", 2, 3)}
-     GROUP BY u.username, u.full_name
-     ORDER BY amount DESC, count DESC`,
-    [tenant, r.from, r.to],
-  );
-  return rows.map((row) => ({
-    user: `${row.user_login} - ${row.user_name}`,
-    user_login: row.user_login,
-    user_name: row.user_name,
-    count: row.count,
-    amount: Number(row.amount),
-  }));
-}
-
-/** KPIs del periodo: solo órdenes pagadas; ventas sin propina. */
-async function periodKPIs(tenant: string | null, r: Range) {
-  const orders = await queryOne<{ total_orders: number; total_sales: string }>(
-    `SELECT COUNT(*)::int AS total_orders,
-            COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) AS total_sales
-     FROM orders o
-     WHERE o.tenant_id = $1 AND o.status = 'pagada'
-       AND ${dateRange("o.created_at", 2, 3)}`,
-    [tenant, r.from, r.to],
-  );
-  const payments = await queryOne<{ total_payments: number }>(
-    `SELECT COUNT(op.id)::int AS total_payments
-     FROM order_payments op
-     JOIN orders o ON o.id = op.order_id
-     WHERE o.tenant_id = $1 AND o.status = 'pagada'
-       AND ${dateRange("op.created_at", 2, 3)}`,
-    [tenant, r.from, r.to],
-  );
-  const totalOrders = orders?.total_orders ?? 0;
-  const totalSales = Number(orders?.total_sales ?? 0);
-  return {
-    total_orders: totalOrders,
-    total_payments: payments?.total_payments ?? 0,
-    total_sales: totalSales.toFixed(2),
-    avg_ticket: totalOrders > 0 ? totalSales / totalOrders : 0,
-  };
-}
-
-/** Tendencia operativa por bucket (hora/día/mes), filtrable por usuario. */
-async function trendData(
+/** Desempeño por usuario (pedidos + pagos) de TODOS los periodos en UNA sola
+ * consulta: cada rama UNION ALL es la consulta por-periodo original etiquetada,
+ * así pasamos de 4 round-trips a 1 sin alterar los números por periodo. */
+async function allUserRankings(
   tenant: string | null,
-  r: Range,
-  bucket: TrendBucket,
+  periods: PeriodSpec[],
+): Promise<{
+  orders: Record<string, RankingOrdersRow[]>;
+  payments: Record<string, RankingPaymentsRow[]>;
+}> {
+  const branches = periods.map((p, i) => {
+    const f = 2 + i * 2, t = 3 + i * 2;
+    return `SELECT '${p.key}' AS period, q.* FROM (
+       SELECT COALESCE(ord.user_login, pay.user_login) AS user_login,
+              COALESCE(ord.user_name, pay.user_name) AS user_name,
+              COALESCE(ord.orders_count, 0)::int AS orders_count,
+              COALESCE(ord.sales, 0) AS sales,
+              COALESCE(pay.payments_count, 0)::int AS payments_count,
+              COALESCE(pay.amount, 0) AS amount
+       FROM (
+         SELECT u.username AS user_login, u.full_name AS user_name,
+                COUNT(DISTINCT o.id)::int AS orders_count,
+                COALESCE(SUM(oi.subtotal), 0) AS sales
+         FROM orders o
+         JOIN users u ON u.id = o.user_id
+         LEFT JOIN order_items oi ON oi.order_id = o.id
+           AND oi.kitchen_status <> 'cancelado'
+         WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
+           AND ${dateRange("o.created_at", f, t)}
+         GROUP BY u.username, u.full_name
+       ) ord
+       FULL OUTER JOIN (
+         SELECT u.username AS user_login, u.full_name AS user_name,
+                COUNT(op.id)::int AS payments_count,
+                COALESCE(SUM(op.amount - op.change_given), 0) AS amount
+         FROM order_payments op
+         JOIN orders o ON o.id = op.order_id
+         JOIN users u ON u.id = op.user_id
+         WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
+           AND ${dateRange("op.created_at", f, t)}
+         GROUP BY u.username, u.full_name
+       ) pay ON ord.user_login = pay.user_login
+     ) q`;
+  });
+  const rows = await query<{
+    period: string;
+    user_login: string;
+    user_name: string;
+    orders_count: number;
+    sales: string;
+    payments_count: number;
+    amount: string;
+  }>(
+    branches.join("\nUNION ALL\n"),
+    [tenant, ...periods.flatMap((p) => [p.range.from, p.range.to])],
+  );
+
+  const orders: Record<string, RankingOrdersRow[]> = {};
+  const payments: Record<string, RankingPaymentsRow[]> = {};
+  for (const p of periods) {
+    const rs = rows.filter((row) => row.period === p.key);
+    orders[p.key] = rs
+      .map((row) => ({
+        user: `${row.user_login} - ${row.user_name}`,
+        user_login: row.user_login,
+        user_name: row.user_name,
+        count: row.orders_count,
+        sales: Number(row.sales),
+      }))
+      .filter((o) => o.count > 0)
+      .sort((a, b) => b.count - a.count || b.sales - a.sales);
+    payments[p.key] = rs
+      .map((row) => ({
+        user: `${row.user_login} - ${row.user_name}`,
+        user_login: row.user_login,
+        user_name: row.user_name,
+        count: row.payments_count,
+        amount: Number(row.amount),
+      }))
+      .filter((pay) => pay.count > 0)
+      .sort((a, b) => b.amount - a.amount || b.count - a.count);
+  }
+  return { orders, payments };
+}
+
+/** KPIs (pedidos/ventas/pagos) de TODOS los periodos en UNA consulta (UNION
+ * ALL de las ramas por-periodo). Solo órdenes pagadas; ventas sin propina. */
+async function allPeriodKPIs(tenant: string | null, periods: PeriodSpec[]) {
+  const branches = periods.map((p, i) => {
+    const f = 2 + i * 2, t = 3 + i * 2;
+    return `SELECT '${p.key}' AS period,
+       (SELECT COUNT(*)::int FROM orders o WHERE o.tenant_id = $1 AND o.status = 'pagada' AND ${dateRange("o.created_at", f, t)}) AS total_orders,
+       (SELECT COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) FROM orders o WHERE o.tenant_id = $1 AND o.status = 'pagada' AND ${dateRange("o.created_at", f, t)}) AS total_sales,
+       (SELECT COUNT(op.id)::int FROM order_payments op JOIN orders o ON o.id = op.order_id WHERE o.tenant_id = $1 AND o.status = 'pagada' AND ${dateRange("op.created_at", f, t)}) AS total_payments`;
+  });
+  const rows = await query<{
+    period: string; total_orders: number; total_sales: string; total_payments: number;
+  }>(
+    branches.join("\nUNION ALL\n"),
+    [tenant, ...periods.flatMap((p) => [p.range.from, p.range.to])],
+  );
+  const out: Record<string, {
+    total_orders: number; total_payments: number; total_sales: string; avg_ticket: number;
+  }> = {};
+  for (const row of rows) {
+    const totalOrders = row.total_orders ?? 0;
+    const totalSales = Number(row.total_sales ?? 0);
+    out[row.period] = {
+      total_orders: totalOrders,
+      total_payments: row.total_payments ?? 0,
+      total_sales: totalSales.toFixed(2),
+      avg_ticket: totalOrders > 0 ? totalSales / totalOrders : 0,
+    };
+  }
+  return out;
+}
+
+/** Tendencia operativa de TODOS los periodos en UNA consulta (UNION ALL). El
+ * bucket/formato de cada periodo se fija por rama (es server-side, no entrada
+ * del usuario); el filtro por usuario va en un único parámetro compartido. */
+async function allTrendData(
+  tenant: string | null,
+  periods: PeriodSpec[],
   actorLogin: string | null,
-) {
-  const fmt = bucket === "hour" ? "HH24:00" : bucket === "month" ? "MM/YYYY" : "DD/MM";
-
-  const orderRows = await query<{ label: string; orders: number }>(
-    `SELECT to_char(o.created_at AT TIME ZONE '${TZ}', '${fmt}') AS label,
-            COUNT(*)::int AS orders
-     FROM orders o
-     JOIN users u ON u.id = o.user_id
-     WHERE o.tenant_id = $1 AND o.status = 'pagada'
-       AND ${dateRange("o.created_at", 2, 3)}
-       AND ($4::text IS NULL OR u.username = $4)
-     GROUP BY 1`,
-    [tenant, r.from, r.to, actorLogin],
+): Promise<Record<string, { label: string; orders: number; payments: number; amount: number }[]>> {
+  const actorParam = 2 + periods.length * 2; // tras tenant ($1) + los pares de rango
+  const branches = periods.map((p, i) => {
+    const f = 2 + i * 2, t = 3 + i * 2;
+    const fmt = p.bucket === "hour" ? "HH24:00" : p.bucket === "month" ? "MM/YYYY" : "DD/MM";
+    return `SELECT '${p.key}' AS period, q.* FROM (
+       SELECT COALESCE(o.label, pp.label) AS label,
+              COALESCE(o.orders, 0)::int AS orders,
+              COALESCE(pp.payments, 0)::int AS payments,
+              COALESCE(pp.amount, 0) AS amount
+       FROM (
+         SELECT to_char(o.created_at AT TIME ZONE '${TZ}', '${fmt}') AS label,
+                COUNT(*)::int AS orders
+         FROM orders o
+         JOIN users u ON u.id = o.user_id
+         WHERE o.tenant_id = $1 AND o.status = 'pagada'
+           AND ${dateRange("o.created_at", f, t)}
+           AND ($${actorParam}::text IS NULL OR u.username = $${actorParam})
+         GROUP BY 1
+       ) o
+       FULL OUTER JOIN (
+         SELECT to_char(op.created_at AT TIME ZONE '${TZ}', '${fmt}') AS label,
+                COUNT(op.id)::int AS payments,
+                COALESCE(SUM(op.amount - op.change_given), 0) AS amount
+         FROM order_payments op
+         JOIN orders o ON o.id = op.order_id
+         JOIN users u ON u.id = op.user_id
+         WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
+           AND ${dateRange("op.created_at", f, t)}
+           AND ($${actorParam}::text IS NULL OR u.username = $${actorParam})
+         GROUP BY 1
+       ) pp ON o.label = pp.label
+     ) q`;
+  });
+  const rows = await query<{ period: string; label: string; orders: number; payments: number; amount: string }>(
+    branches.join("\nUNION ALL\n"),
+    [tenant, ...periods.flatMap((p) => [p.range.from, p.range.to]), actorLogin],
   );
-  const paymentRows = await query<{ label: string; payments: number; amount: string }>(
-    `SELECT to_char(op.created_at AT TIME ZONE '${TZ}', '${fmt}') AS label,
-            COUNT(op.id)::int AS payments,
-            COALESCE(SUM(op.amount - op.change_given), 0) AS amount
-     FROM order_payments op
-     JOIN orders o ON o.id = op.order_id
-     JOIN users u ON u.id = op.user_id
-     WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-       AND ${dateRange("op.created_at", 2, 3)}
-       AND ($4::text IS NULL OR u.username = $4)
-     GROUP BY 1`,
-    [tenant, r.from, r.to, actorLogin],
-  );
 
-  const byOrders = new Map(orderRows.map((row) => [row.label, row.orders]));
-  const byPayments = new Map(paymentRows.map((row) => [row.label, row]));
-  return trendLabels(r, bucket).map((label) => ({
-    label,
-    orders: byOrders.get(label) ?? 0,
-    payments: byPayments.get(label)?.payments ?? 0,
-    amount: Number(byPayments.get(label)?.amount ?? 0),
-  }));
+  const out: Record<string, { label: string; orders: number; payments: number; amount: number }[]> = {};
+  for (const p of periods) {
+    const byLabel = new Map(
+      rows.filter((row) => row.period === p.key).map((row) => [row.label, row]),
+    );
+    out[p.key] = trendLabels(p.range, p.bucket).map((label) => {
+      const row = byLabel.get(label);
+      return {
+        label,
+        orders: row?.orders ?? 0,
+        payments: row?.payments ?? 0,
+        amount: Number(row?.amount ?? 0),
+      };
+    });
+  }
+  return out;
 }
 
 interface CustomParams {
@@ -291,7 +352,7 @@ async function userRankingPayload(tenant: string | null, params: CustomParams) {
   const custom = customRange(params.type, params.day, params.month, params.year);
   const actor = params.actorLogin !== "all" ? params.actorLogin : null;
 
-  const periods = [
+  const periods: PeriodSpec[] = [
     { key: "day", range: ranges.day, bucket: "hour" as TrendBucket },
     { key: "week", range: ranges.week, bucket: "day" as TrendBucket },
     { key: "month", range: ranges.month, bucket: "day" as TrendBucket },
@@ -303,20 +364,17 @@ async function userRankingPayload(tenant: string | null, params: CustomParams) {
   const userKPIs: Record<string, unknown> = {};
   const userTrendData: Record<string, unknown> = {};
 
-  await Promise.all(
-    periods.map(async (p) => {
-      const [orders, payments, kpis, trend] = await Promise.all([
-        rankingOrders(tenant, p.range),
-        rankingPayments(tenant, p.range),
-        periodKPIs(tenant, p.range),
-        trendData(tenant, p.range, p.bucket, actor),
-      ]);
-      userRankingOrders[p.key] = orders;
-      userRankingPayments[p.key] = payments;
-      userKPIs[p.key] = kpis;
-      userTrendData[p.key] = trend;
-    }),
-  );
+  // Los 4 periodos en 3 consultas (UNION ALL) en vez de 12 round-trips,
+  // ejecutadas en serie para no abrir varias conexiones a la vez (pool=5).
+  const rankings = await allUserRankings(tenant, periods);
+  const kpis = await allPeriodKPIs(tenant, periods);
+  const trend = await allTrendData(tenant, periods, actor);
+  for (const p of periods) {
+    userRankingOrders[p.key] = rankings.orders[p.key] ?? [];
+    userRankingPayments[p.key] = rankings.payments[p.key] ?? [];
+    userKPIs[p.key] = kpis[p.key];
+    userTrendData[p.key] = trend[p.key] ?? [];
+  }
 
   return {
     userRankingOrders,
@@ -346,10 +404,19 @@ dashboardRouter.get("/", async (req, res) => {
     daily_goal: string; daily_date: string | null;
     weekly_goal: string; week_start: string | null; week_end: string | null;
     monthly_goal: string; month_start: string | null; month_end: string | null;
+    business_name: string | null; logo_url: string | null;
   }>(
-    `SELECT daily_goal, daily_date::text, weekly_goal, week_start::text,
-            week_end::text, monthly_goal, month_start::text, month_end::text
-     FROM objectives WHERE tenant_id = $1`,
+    `SELECT 
+       (SELECT daily_goal FROM objectives WHERE tenant_id = $1) AS daily_goal,
+       (SELECT daily_date::text FROM objectives WHERE tenant_id = $1) AS daily_date,
+       (SELECT weekly_goal FROM objectives WHERE tenant_id = $1) AS weekly_goal,
+       (SELECT week_start::text FROM objectives WHERE tenant_id = $1) AS week_start,
+       (SELECT week_end::text FROM objectives WHERE tenant_id = $1) AS week_end,
+       (SELECT monthly_goal FROM objectives WHERE tenant_id = $1) AS monthly_goal,
+       (SELECT month_start::text FROM objectives WHERE tenant_id = $1) AS month_start,
+       (SELECT month_end::text FROM objectives WHERE tenant_id = $1) AS month_end,
+       (SELECT business_name FROM business_settings WHERE tenant_id = $1) AS business_name,
+       (SELECT logo_url FROM business_settings WHERE tenant_id = $1) AS logo_url`,
     [tenant],
   );
 
@@ -367,89 +434,109 @@ dashboardRouter.get("/", async (req, res) => {
       : ranges.month,
   };
 
-  async function billedIn(r: Range): Promise<number> {
-    const row = await queryOne<{ billed: string }>(
-      `SELECT COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) AS billed
-       FROM orders o
-       WHERE o.tenant_id = $1 AND o.status = 'pagada'
-         AND ${dateRange("o.created_at", 2, 3)}`,
-      [tenant, r.from, r.to],
-    );
-    return Number(row?.billed ?? 0);
-  }
+  const billedRow = await queryOne<{ day_val: string; week_val: string; month_val: string }>(
+    `SELECT 
+       COALESCE(SUM(CASE WHEN ${dateRange("o.created_at", 2, 3)} THEN o.total - o.tip - o.delivery_fee ELSE 0 END), 0) AS day_val,
+       COALESCE(SUM(CASE WHEN ${dateRange("o.created_at", 4, 5)} THEN o.total - o.tip - o.delivery_fee ELSE 0 END), 0) AS week_val,
+       COALESCE(SUM(CASE WHEN ${dateRange("o.created_at", 6, 7)} THEN o.total - o.tip - o.delivery_fee ELSE 0 END), 0) AS month_val
+     FROM orders o
+     WHERE o.tenant_id = $1 AND o.status = 'pagada'`,
+    [
+      tenant,
+      billedRanges.day.from, billedRanges.day.to,
+      billedRanges.week.from, billedRanges.week.to,
+      billedRanges.month.from, billedRanges.month.to,
+    ],
+  );
+  const billedDay = Number(billedRow?.day_val ?? 0);
+  const billedWeek = Number(billedRow?.week_val ?? 0);
+  const billedMonth = Number(billedRow?.month_val ?? 0);
 
-  async function waitersIn(r: Range) {
-    const rows = await query<{ name: string; value: string }>(
-      `SELECT u.username AS name, COALESCE(SUM(o.total - o.tip - o.delivery_fee), 0) AS value
-       FROM orders o
-       JOIN users u ON u.id = o.user_id
-       WHERE o.tenant_id = $1 AND o.status = 'pagada'
-         AND ${dateRange("o.created_at", 2, 3)}
-       GROUP BY u.username
-       ORDER BY value DESC`,
-      [tenant, r.from, r.to],
-    );
-    return rows.map((row) => ({ name: row.name, value: Number(row.value) }));
-  }
+  const waitersRows = await query<{ name: string; day_val: string; week_val: string; month_val: string }>(
+    `SELECT u.username AS name,
+       COALESCE(SUM(CASE WHEN ${dateRange("o.created_at", 2, 3)} THEN o.total - o.tip - o.delivery_fee ELSE 0 END), 0) AS day_val,
+       COALESCE(SUM(CASE WHEN ${dateRange("o.created_at", 4, 5)} THEN o.total - o.tip - o.delivery_fee ELSE 0 END), 0) AS week_val,
+       COALESCE(SUM(CASE WHEN ${dateRange("o.created_at", 6, 7)} THEN o.total - o.tip - o.delivery_fee ELSE 0 END), 0) AS month_val
+     FROM orders o
+     JOIN users u ON u.id = o.user_id
+     WHERE o.tenant_id = $1 AND o.status = 'pagada'
+     GROUP BY u.username`,
+    [
+      tenant,
+      ranges.day.from, ranges.day.to,
+      ranges.week.from, ranges.week.to,
+      ranges.month.from, ranges.month.to,
+    ],
+  );
+  const waitersDay = waitersRows.map((r) => ({ name: r.name, value: Number(r.day_val) })).filter((w) => w.value > 0).sort((a, b) => b.value - a.value);
+  const waitersWeek = waitersRows.map((r) => ({ name: r.name, value: Number(r.week_val) })).filter((w) => w.value > 0).sort((a, b) => b.value - a.value);
+  const waitersMonth = waitersRows.map((r) => ({ name: r.name, value: Number(r.month_val) })).filter((w) => w.value > 0).sort((a, b) => b.value - a.value);
 
-  async function paymentsIn(r: Range) {
-    const rows = await query<{ method: string; count: number; tip: string }>(
-      `SELECT pm.name AS method, COUNT(op.id)::int AS count,
-              COALESCE(SUM(op.tip_included), 0) AS tip
-       FROM order_payments op
-       JOIN orders o ON o.id = op.order_id
-       JOIN payment_methods pm ON pm.id = op.payment_method_id
-       WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
-         AND ${dateRange("op.created_at", 2, 3)}
-       GROUP BY pm.name`,
-      [tenant, r.from, r.to],
-    );
-    return rows.map((row) => ({
-      method: row.method,
-      count: row.count,
-      tip: Number(row.tip),
+  const paymentsRows = await query<{
+    method: string;
+    day_count: number; day_tip: string;
+    week_count: number; week_tip: string;
+    month_count: number; month_tip: string;
+  }>(
+    `SELECT pm.name AS method,
+       COUNT(CASE WHEN ${dateRange("op.created_at", 2, 3)} THEN op.id ELSE NULL END)::int AS day_count,
+       COALESCE(SUM(CASE WHEN ${dateRange("op.created_at", 2, 3)} THEN op.tip_included ELSE 0 END), 0) AS day_tip,
+       COUNT(CASE WHEN ${dateRange("op.created_at", 4, 5)} THEN op.id ELSE NULL END)::int AS week_count,
+       COALESCE(SUM(CASE WHEN ${dateRange("op.created_at", 4, 5)} THEN op.tip_included ELSE 0 END), 0) AS week_tip,
+       COUNT(CASE WHEN ${dateRange("op.created_at", 6, 7)} THEN op.id ELSE NULL END)::int AS month_count,
+       COALESCE(SUM(CASE WHEN ${dateRange("op.created_at", 6, 7)} THEN op.tip_included ELSE 0 END), 0) AS month_tip
+     FROM order_payments op
+     JOIN orders o ON o.id = op.order_id
+     JOIN payment_methods pm ON pm.id = op.payment_method_id
+     WHERE o.tenant_id = $1 AND o.status <> 'cancelada'
+     GROUP BY pm.name`,
+    [
+      tenant,
+      ranges.day.from, ranges.day.to,
+      ranges.week.from, ranges.week.to,
+      ranges.month.from, ranges.month.to,
+    ],
+  );
+  const paymentsDay = paymentsRows.map((r) => ({ method: r.method, count: r.day_count, tip: Number(r.day_tip) })).filter((p) => p.count > 0);
+  const paymentsWeek = paymentsRows.map((r) => ({ method: r.method, count: r.week_count, tip: Number(r.week_tip) })).filter((p) => p.count > 0);
+  const paymentsMonth = paymentsRows.map((r) => ({ method: r.method, count: r.month_count, tip: Number(r.month_tip) })).filter((p) => p.count > 0);
+
+  const topProducts = await query<{ name: string; qty: number }>(
+    `SELECT oi.product_name AS name, SUM(oi.quantity)::int AS qty
+     FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     WHERE o.tenant_id = $1 AND o.status = 'pagada'
+       AND oi.kitchen_status <> 'cancelado'
+       AND o.created_at >= (($2::date - 30)::timestamp AT TIME ZONE '${TZ}')
+     GROUP BY oi.product_name
+     ORDER BY qty DESC
+     LIMIT 10`,
+    [tenant, todayLocal()],
+  );
+
+  const stockItems = await query<{ id: number; name: string; stock: string; min_stock: string; unit: string }>(
+    `SELECT id, name, stock, min_stock, unit FROM inventory_products
+     WHERE tenant_id = $1 AND is_active AND (stock <= min_stock OR stock < 0)
+     ORDER BY stock ASC`,
+    [tenant],
+  );
+
+  const lowStock = stockItems.filter(
+    (item) => Number(item.stock) >= 0 && Number(item.stock) <= Number(item.min_stock)
+  );
+
+  const overdrafts = stockItems
+    .filter((item) => Number(item.stock) < 0)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      stock: item.stock,
+      unit: item.unit,
     }));
-  }
 
-  const [
-    billedDay, billedWeek, billedMonth,
-    waitersDay, waitersWeek, waitersMonth,
-    paymentsDay, paymentsWeek, paymentsMonth,
-    topProducts, lowStock, overdrafts, business, userRanking,
-  ] = await Promise.all([
-    billedIn(billedRanges.day), billedIn(billedRanges.week), billedIn(billedRanges.month),
-    waitersIn(ranges.day), waitersIn(ranges.week), waitersIn(ranges.month),
-    paymentsIn(ranges.day), paymentsIn(ranges.week), paymentsIn(ranges.month),
-    query<{ name: string; qty: number }>(
-      `SELECT oi.product_name AS name, SUM(oi.quantity)::int AS qty
-       FROM order_items oi
-       JOIN orders o ON o.id = oi.order_id
-       WHERE o.tenant_id = $1 AND o.status = 'pagada'
-         AND oi.kitchen_status <> 'cancelado'
-         AND o.created_at >= (($2::date - 30)::timestamp AT TIME ZONE '${TZ}')
-       GROUP BY oi.product_name
-       ORDER BY qty DESC
-       LIMIT 10`,
-      [tenant, todayLocal()],
-    ),
-    query(
-      `SELECT id, name, stock, min_stock, unit FROM inventory_products
-       WHERE tenant_id = $1 AND is_active AND stock <= min_stock AND stock >= 0
-       ORDER BY stock ASC`,
-      [tenant],
-    ),
-    query(
-      `SELECT id, name, stock, unit FROM inventory_products
-       WHERE tenant_id = $1 AND is_active AND stock < 0
-       ORDER BY stock ASC`,
-      [tenant],
-    ),
-    queryOne<{ business_name: string; logo_url: string | null }>(
-      `SELECT business_name, logo_url FROM business_settings WHERE tenant_id = $1`,
-      [tenant],
-    ),
-    userRankingPayload(tenant, parseCustomParams(req.query as Record<string, unknown>)),
-  ]);
+  const business = objectives;
+
+  const userRanking = await userRankingPayload(tenant, parseCustomParams(req.query as Record<string, unknown>));
 
   res.json({
     dates: {

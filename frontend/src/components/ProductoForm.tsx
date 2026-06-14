@@ -18,6 +18,10 @@ import {
 
 interface Categoria { id: number; name: string }
 interface Ingrediente { id: number; name: string | null; unit: string | null; type: string }
+interface InventoryProduct {
+  id: number; name: string | null; unit: string | null; type: string;
+  product_id: number | null; stock: string | number; min_stock: string | number;
+}
 interface RecipeRow { inventoryProductId: number; name: string; unit: string; quantityUsed: string }
 interface VariantRow { id?: number; name: string; salePrice: string }
 
@@ -91,7 +95,7 @@ export function ProductoForm({ producto, categories, onSaved, onCancel }: {
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const originalVariantIds = useRef<number[]>([]);
 
-  // ── Inventario / receta ──
+  // ── Inventario / receta (va a cocina) ──
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>([]);
   const [recipe, setRecipe] = useState<RecipeRow[]>([]);
   const [newIngId, setNewIngId] = useState("");
@@ -100,10 +104,27 @@ export function ProductoForm({ producto, categories, onSaved, onCancel }: {
   const [ingName, setIngName] = useState("");
   const [ingUnit, setIngUnit] = useState("Unidad");
 
+  // ── Inventario / consumible directo (NO va a cocina) ──
+  const [consumibleId, setConsumibleId] = useState<number | null>(null);
+  const [cantInicial, setCantInicial] = useState("");
+  const [cantMinima, setCantMinima] = useState("");
+  const [cantActual, setCantActual] = useState("");
+
   // Carga inicial de subrecursos al editar + catálogo de ingredientes.
   useEffect(() => {
-    api<Ingrediente[]>("/api/catalogs/inventory-products")
-      .then((rows) => setIngredientes(rows.filter((r) => r.type === "ingrediente")))
+    api<InventoryProduct[]>("/api/catalogs/inventory-products")
+      .then((rows) => {
+        setIngredientes(rows.filter((r) => r.type === "ingrediente"));
+        if (producto) {
+          // Consumible directo previo (Polaris §1.11.1): si existe, se ajusta
+          // la cantidad actual en vez de pedir inicial/mínima.
+          const cons = rows.find((r) => r.type === "consumible" && r.product_id === producto.id);
+          if (cons) {
+            setConsumibleId(cons.id);
+            setCantMinima(String(Number(cons.min_stock ?? 0)));
+          }
+        }
+      })
       .catch(() => {});
     if (!producto) return;
     api<{ id: number; name: string; sale_price: string }[]>(`/api/products/${producto.id}/variants`)
@@ -213,15 +234,43 @@ export function ProductoForm({ producto, categories, onSaved, onCancel }: {
         }
       }
 
-      // Receta: se guarda si es inventariable; si no, se limpia.
-      await api(`/api/products/${id}/recipe`, {
-        method: "PUT",
-        body: {
-          items: isInventariable
-            ? recipe.map((r) => ({ inventoryProductId: r.inventoryProductId, quantityUsed: Number(r.quantityUsed) }))
-            : [],
-        },
-      });
+      // Inventario (Polaris §1.11.1): si va a cocina → receta de ingredientes;
+      // si NO va a cocina → consumible directo (cantidad inicial/mínima, o
+      // cantidad actual al ajustar uno existente). Solo aplica si es inventariable.
+      if (isInventariable && goesToKitchen) {
+        await api(`/api/products/${id}/recipe`, {
+          method: "PUT",
+          body: { items: recipe.map((r) => ({ inventoryProductId: r.inventoryProductId, quantityUsed: Number(r.quantityUsed) })) },
+        });
+        // Si antes era consumible directo, se retira para no descontar doble.
+        if (consumibleId) {
+          await api(`/api/catalogs/inventory-products/${consumibleId}`, { method: "DELETE" }).catch(() => {});
+          setConsumibleId(null);
+        }
+      } else if (isInventariable && !goesToKitchen) {
+        if (consumibleId) {
+          await api(`/api/catalogs/inventory-products/${consumibleId}`, {
+            method: "PUT", body: { stock: Number(cantActual || 0) },
+          });
+        } else {
+          const created = await api<{ id: number }>("/api/catalogs/inventory-products", {
+            method: "POST",
+            body: {
+              type: "consumible", name: name.trim(), unit: "Unidad", product_id: id,
+              stock: Number(cantInicial || 0), min_stock: Number(cantMinima || 0), is_active: true,
+            },
+          });
+          setConsumibleId(created.id);
+        }
+        await api(`/api/products/${id}/recipe`, { method: "PUT", body: { items: [] } });
+      } else {
+        // No inventariable: se limpia la receta y se retira el consumible previo.
+        await api(`/api/products/${id}/recipe`, { method: "PUT", body: { items: [] } });
+        if (consumibleId) {
+          await api(`/api/catalogs/inventory-products/${consumibleId}`, { method: "DELETE" }).catch(() => {});
+          setConsumibleId(null);
+        }
+      }
 
       toast("success", isNew ? "Producto agregado correctamente." : "Producto actualizado correctamente.");
       onSaved();
@@ -376,7 +425,7 @@ export function ProductoForm({ producto, categories, onSaved, onCancel }: {
           </div>
         )}
 
-        {tab === "Inventario" && (
+        {tab === "Inventario" && goesToKitchen && (
           <div className="space-y-4">
             <h3 className="text-sm font-semibold">Receta</h3>
             <div className="overflow-hidden rounded-xl border border-border-subtle">
@@ -433,6 +482,37 @@ export function ProductoForm({ producto, categories, onSaved, onCancel }: {
                   <Input value={ingUnit} onChange={(e) => setIngUnit(e.target.value)} className="!w-32" />
                 </Field>
                 <Button onClick={crearIngrediente}>Guardar ingrediente</Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "Inventario" && !goesToKitchen && (
+          <div className="space-y-4">
+            {consumibleId ? (
+              <div className="space-y-3 rounded-xl border border-border-subtle p-4">
+                <div className="grid items-start gap-2 sm:grid-cols-[180px_1fr]">
+                  <span className="text-sm font-semibold">Consumible previo encontrado</span>
+                  <p className="text-sm text-text-secondary">
+                    Se ha encontrado un consumible asociado a este producto anteriormente,
+                    escriba la cantidad actual para ajustar el inventario.
+                  </p>
+                </div>
+                <Row label="Cantidad actual">
+                  <Input type="number" min={0} step="any" value={cantActual}
+                    onChange={(e) => setCantActual(e.target.value)} />
+                </Row>
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-xl border border-border-subtle p-4">
+                <Row label="Cantidad inicial">
+                  <Input type="number" min={0} step="any" value={cantInicial}
+                    onChange={(e) => setCantInicial(e.target.value)} />
+                </Row>
+                <Row label="Cantidad mínima">
+                  <Input type="number" min={0} step="any" value={cantMinima}
+                    onChange={(e) => setCantMinima(e.target.value)} />
+                </Row>
               </div>
             )}
           </div>
