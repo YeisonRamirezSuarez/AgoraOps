@@ -15,7 +15,7 @@ export default defineConfig({
       manifest: {
         name: "AgoraOps POS",
         short_name: "AgoraOps",
-        description: "Sistema POS para restaurantes y bares",
+        description: "Soluciones de Gestión Integral",
         lang: "es",
         start_url: "/",
         display: "standalone",
@@ -23,9 +23,9 @@ export default defineConfig({
         theme_color: "#099dd7",
         background_color: "#F6F7F9",
         icons: [
-          { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
-          { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
-          { src: "pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {

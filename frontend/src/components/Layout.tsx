@@ -24,6 +24,7 @@ import { configureCurrency } from "./ui";
 import { applyPalette } from "../shared/constants/palettes";
 import { APP_VERSION } from "../shared/constants/app";
 import NotificationBell from "./NotificationBell";
+import { LogoMark } from "./Logo";
 
 interface NavChild {
   label: string;
@@ -314,11 +315,16 @@ export default function Layout() {
             <LogOut size={21} className="shrink-0" />
             <span className={collapsed ? "md:hidden" : ""}>Cerrar sesión</span>
           </button>
-          <p className={`mt-1 px-3 pb-1 text-center text-sm font-extrabold tracking-wide text-white/90 ${
-            collapsed ? "md:hidden" : ""
-          }`}>
-            AgoraOps
-          </p>
+          {/* Marca AgoraOps: visible en el menú de TODOS los establecimientos
+              (blanca, se ve intencional sobre cualquier paleta del tenant) */}
+          <div className="mt-1 flex items-center justify-center gap-2 px-3 pb-1 text-white/90">
+            <LogoMark tone="mono" className="h-6 w-auto shrink-0" />
+            <span className={`text-sm font-extrabold tracking-wide ${
+              collapsed ? "md:hidden" : ""
+            }`}>
+              AgoraOps
+            </span>
+          </div>
         </div>
       </aside>
 

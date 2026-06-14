@@ -10,8 +10,22 @@ import { z } from "zod";
 import { query, queryOne } from "../db.js";
 import { dbErrorMessage } from "../lib/crud.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
+import { signTenant } from "../lib/publicToken.js";
 
 export const settingsRouter = Router();
+
+/** URL estable del menú público para generar el QR de las mesas (§1.6.2).
+ * Antes del guard de admin: la pantalla de QR la puede ver cualquier
+ * usuario autenticado. Devuelve el tenant y su `code` (HMAC estable); el
+ * frontend arma `${origin}/m/<tenantId>?c=<code>`. */
+settingsRouter.get("/menu-qr", requireAuth, (req, res) => {
+  const tenantId = req.user!.tenantId;
+  if (!tenantId) {
+    res.status(404).json({ error: "Sin establecimiento" });
+    return;
+  }
+  res.json({ tenantId, code: signTenant(tenantId) });
+});
 
 /** Branding del establecimiento (nombre, logo y paleta de colores).
  * Registrado ANTES del guard de administrador: lo necesita cualquier

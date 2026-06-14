@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { Loader, ToastProvider } from "./components/ui";
+import { ToastProvider } from "./components/ui";
+import SplashScreen from "./components/SplashScreen";
 import Layout from "./components/Layout";
 import SuperAdminLayout from "./components/SuperAdminLayout";
 import SuperDashboard from "./pages/superadmin/SuperDashboard";
@@ -8,6 +9,8 @@ import Establecimientos from "./pages/superadmin/Establecimientos";
 import EstablecimientoNuevo from "./pages/superadmin/EstablecimientoNuevo";
 import EstablecimientoDetalle from "./pages/superadmin/EstablecimientoDetalle";
 import Login from "./pages/Login";
+import Recuperar from "./pages/Recuperar";
+import RestablecerContrasena from "./pages/RestablecerContrasena";
 import Dashboard from "./pages/Dashboard";
 import Mesas from "./pages/Mesas";
 import Orden from "./pages/Orden";
@@ -22,12 +25,13 @@ import Seguridad from "./pages/Seguridad";
 import Notificaciones from "./pages/Notificaciones";
 import CambiarContrasena from "./pages/CambiarContrasena";
 import { MenuPage, QrPage } from "./pages/Restaurante";
+import MenuPublico from "./pages/MenuPublico";
 import { ClientesPage } from "./pages/Clientes";
 import { DomiciliosPage } from "./pages/Domicilios";
 import { ReservacionesPage } from "./pages/Reservaciones";
 
 function Loading() {
-  return <Loader full />;
+  return <SplashScreen />;
 }
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -68,7 +72,11 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/recuperar" element={<Recuperar />} />
+            <Route path="/restablecer" element={<RestablecerContrasena />} />
             <Route path="/primer-ingreso" element={<FirstLoginGate />} />
+            {/* Menú público (§1.6.2): sin sesión, lo abre el QR de las mesas. */}
+            <Route path="/m/:tenantId" element={<MenuPublico />} />
             <Route
               path="/superadmin"
               element={
