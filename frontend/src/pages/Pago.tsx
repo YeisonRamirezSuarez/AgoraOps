@@ -355,7 +355,8 @@ export default function Pago() {
                     </p>
                   </div>
                   <MoneyInput
-                    value={tipAmount === "" ? suggestedTip : tipAmount}
+                    value={tipAmount}
+                    placeholder={new Intl.NumberFormat("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(suggestedTip)}
                     onValueChange={setTipAmount}
                     decimals={0}
                     className="!w-32 text-right font-bold"
@@ -655,7 +656,8 @@ export default function Pago() {
                     </span>
                   </span>
                   <MoneyInput
-                    value={tipAmount === "" ? suggestedTip : tipAmount}
+                    value={tipAmount}
+                    placeholder={new Intl.NumberFormat("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(suggestedTip)}
                     onValueChange={setTipAmount}
                     decimals={0}
                     className="!h-8 !w-28 text-right font-medium"
