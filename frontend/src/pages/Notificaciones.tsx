@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { api, subscribeEvents } from "../lib/api";
+import { debounce } from "../lib/debounce";
 import { Input, PageHeader, Table, usePagination, useToast } from "../components/ui";
 
 interface Notification {
@@ -48,9 +49,14 @@ export default function Notificaciones() {
 
   useEffect(() => {
     load();
-    return subscribeEvents((e) => {
-      if (e.table === "notifications") load();
+    const reload = debounce(load, 250);
+    const unsub = subscribeEvents((e) => {
+      if (e.table === "notifications") reload();
     });
+    return () => {
+      reload.cancel();
+      unsub();
+    };
   }, [load]);
 
   const filtered = useMemo(() => {

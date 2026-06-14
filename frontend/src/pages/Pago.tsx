@@ -354,14 +354,17 @@ export default function Pago() {
                       Sugerida {tipPct}%: {cop.format(suggestedTip)} · puede ser más o menos
                     </p>
                   </div>
-                  <MoneyInput
-                    value={tipAmount}
-                    placeholder={new Intl.NumberFormat("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(suggestedTip)}
-                    onValueChange={setTipAmount}
-                    decimals={0}
-                    className="!w-32 text-right font-bold"
-                    title="Propina que entregó el cliente"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-text-secondary font-bold">$</span>
+                    <MoneyInput
+                      value={tipAmount}
+                      placeholder={new Intl.NumberFormat("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(suggestedTip)}
+                      onValueChange={setTipAmount}
+                      decimals={0}
+                      className="!w-32 text-right font-bold"
+                      title="Propina que entregó el cliente"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -655,14 +658,17 @@ export default function Pago() {
                       (sugerida {tipPct}%: {cop.format(suggestedTip)})
                     </span>
                   </span>
-                  <MoneyInput
-                    value={tipAmount}
-                    placeholder={new Intl.NumberFormat("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(suggestedTip)}
-                    onValueChange={setTipAmount}
-                    decimals={0}
-                    className="!h-8 !w-28 text-right font-medium"
-                    title="Propina que dio el cliente (puede ser más o menos que la sugerida)"
-                  />
+                  <div className="flex items-center gap-1">
+                    <span className="text-text-secondary font-medium">$</span>
+                    <MoneyInput
+                      value={tipAmount}
+                      placeholder={new Intl.NumberFormat("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(suggestedTip)}
+                      onValueChange={setTipAmount}
+                      decimals={0}
+                      className="!h-8 !w-28 text-right font-medium"
+                      title="Propina que dio el cliente (puede ser más o menos que la sugerida)"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-between">

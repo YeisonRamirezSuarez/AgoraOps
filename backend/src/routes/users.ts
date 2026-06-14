@@ -9,6 +9,8 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { query, queryOne } from "../db.js";
 import { dbErrorMessage } from "../lib/crud.js";
+import { TEMP_PASSWORD } from "../lib/constants.js";
+import { generateUsername } from "../lib/username.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const usersRouter = Router();
@@ -27,7 +29,6 @@ usersRouter.get("/", async (req, res) => {
 });
 
 const userSchema = z.object({
-  username: z.string().min(1),
   email: z.string().email("Correo inválido"),
   fullName: z.string().min(1),
   phone: z.string().optional(),
@@ -43,31 +44,12 @@ usersRouter.post("/", async (req, res) => {
   }
   const d = parsed.data;
 
-  // §1.13: nombre duplicado → sugerencias de nombres disponibles
-  const dup = await queryOne(
-    "SELECT id FROM users WHERE tenant_id = $1 AND username = $2",
-    [req.user!.tenantId, d.username],
-  );
-  if (dup) {
-    const suggestions: string[] = [];
-    for (let i = 1; suggestions.length < 3 && i < 50; i++) {
-      const candidate = `${d.username}${i}`;
-      const exists = await queryOne(
-        "SELECT id FROM users WHERE tenant_id = $1 AND username = $2",
-        [req.user!.tenantId, candidate],
-      );
-      if (!exists) suggestions.push(candidate);
-    }
-    res.status(409).json({
-      error: "El nombre de usuario ya existe.",
-      suggestions,
-    });
-    return;
-  }
-
-  // PHP: clave por defecto + forzar cambio en primer login
-  const defaultPassword = "cambiar1234";
-  const hash = await bcrypt.hash(defaultPassword, 10);
+  // El username ya NO se escribe: se genera automáticamente desde el nombre
+  // (inicial + apellido) y es único globalmente, evitando el prueba y error de
+  // elegir nombres ya tomados. La contraseña temporal es fija (TEMP_PASSWORD) y
+  // se fuerza su cambio en el primer ingreso.
+  const username = await generateUsername(d.fullName);
+  const hash = await bcrypt.hash(TEMP_PASSWORD, 10);
 
   try {
     const row = await queryOne(
@@ -76,13 +58,13 @@ usersRouter.post("/", async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
        RETURNING id, username, email, full_name, is_worker`,
       [
-        req.user!.tenantId, d.username, d.email, hash, d.fullName,
+        req.user!.tenantId, username, d.email, hash, d.fullName,
         d.phone ?? null, d.groupId, d.isWorker,
       ],
     );
     res.status(201).json({
       ...row,
-      defaultPassword,
+      defaultPassword: TEMP_PASSWORD,
       // §1.13: si es trabajador, recordar asignarle horario
       workerReminder: d.isWorker
         ? "Recuerde asignar un horario al trabajador en Configuración → Horarios."

@@ -9,6 +9,14 @@ const databaseUrl =
   process.env.DATABASE_URL ??
   "postgresql://postgres:postgres@localhost:5432/agoraops";
 
+// URL en *session mode* exclusiva para el listener SSE (events.ts): el
+// transaction pooler de Supabase (puerto 6543) NO soporta LISTEN/NOTIFY, así
+// que el LISTEN necesita una conexión de sesión (puerto 5432). El resto de la
+// app va por DATABASE_URL (idealmente el transaction pooler, que multiplexa
+// mejor en serverless). Si no se define, cae a DATABASE_URL — en Postgres
+// local directo LISTEN funciona igual, sin necesidad de dos URLs.
+const databaseSessionUrl = process.env.DATABASE_SESSION_URL ?? databaseUrl;
+
 // JWT_SECRET es obligatorio en producción: sin él se firmarían tokens con un
 // secreto público y cualquiera podría forjar sesiones. En dev se permite un
 // valor por defecto para no frenar el arranque local.
@@ -27,8 +35,8 @@ if (!jwtSecret) {
  *    el certificado. DATABASE_SSL_CA aporta el CA de Supabase (PEM en línea o
  *    ruta a archivo) para que esa validación tenga contra qué verificar.
  */
-function resolveDbSsl(): ConnectionOptions | undefined {
-  if (databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1")) {
+function resolveDbSsl(url: string): ConnectionOptions | undefined {
+  if (url.includes("localhost") || url.includes("127.0.0.1")) {
     return undefined;
   }
   const ssl: ConnectionOptions = {
@@ -44,7 +52,9 @@ function resolveDbSsl(): ConnectionOptions | undefined {
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl,
-  dbSsl: resolveDbSsl(),
+  databaseSessionUrl,
+  dbSsl: resolveDbSsl(databaseUrl),
+  dbSessionSsl: resolveDbSsl(databaseSessionUrl),
   dbPoolMax: Number(process.env.DB_POOL_MAX ?? (isProd ? 5 : 10)),
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",

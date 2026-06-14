@@ -29,7 +29,7 @@ export default function EstablecimientoNuevo() {
   const [tablesCount, setTablesCount] = useState(5);
   const [cashRegisterName, setCashRegisterName] = useState("Caja Principal");
   const [admin, setAdmin] = useState({
-    fullName: "", username: "", email: "", phone: "",
+    fullName: "", email: "", phone: "",
   });
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
@@ -62,7 +62,6 @@ export default function EstablecimientoNuevo() {
             cashRegisterName,
             admin: {
               fullName: admin.fullName,
-              username: admin.username,
               email: admin.email,
               phone: admin.phone || null,
             },
@@ -109,14 +108,14 @@ export default function EstablecimientoNuevo() {
         </div>
 
         <SectionTitle>Administrador del establecimiento</SectionTitle>
+        <p className="-mt-1 mb-1 text-xs text-text-muted">
+          El usuario y la contraseña temporal se generan automáticamente y se
+          envían por correo al administrador con el paso a paso de configuración.
+        </p>
         <div className="space-y-3">
           <FormRow label="Nombre completo" required>
             <Input value={admin.fullName} required
               onChange={(e) => setAdmin({ ...admin, fullName: e.target.value })} />
-          </FormRow>
-          <FormRow label="Usuario" required>
-            <Input value={admin.username} required autoCapitalize="none"
-              onChange={(e) => setAdmin({ ...admin, username: e.target.value })} />
           </FormRow>
           <FormRow label="Correo" required>
             <Input type="email" value={admin.email} required
@@ -146,9 +145,9 @@ export default function EstablecimientoNuevo() {
         onClose={() => navigate("/superadmin/establecimientos")}
       >
         <p className="mb-4 text-sm text-text-secondary">
-          Entrega estas credenciales al administrador del establecimiento.
-          La contraseña es temporal y el sistema le pedirá cambiarla en su
-          primer ingreso. <strong>No se volverá a mostrar.</strong>
+          Se enviaron al correo del administrador junto con el paso a paso de
+          configuración. La contraseña es temporal y el sistema le pedirá
+          cambiarla en su primer ingreso. <strong>No se volverá a mostrar aquí.</strong>
         </p>
         <div className="space-y-2">
           {credentials && (

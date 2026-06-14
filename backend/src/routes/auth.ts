@@ -35,7 +35,9 @@ authRouter.post("/login", async (req, res) => {
   }
   const { username, password } = parsed.data;
 
-  // Comparación exacta (= case-sensitive, manual §1.3.3)
+  // Comparación exacta (= case-sensitive, manual §1.3.3). El username es ÚNICO
+  // globalmente (índice users_username_global_key, mig 00050), así que buscar
+  // por username solo es inequívoco aunque haya varios restaurantes.
   const user = await queryOne<{
     id: string;
     tenant_id: string | null;
